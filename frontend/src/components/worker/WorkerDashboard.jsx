@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { useActivities, useTodayShift, useToast, useShiftHistory } from '../../hooks'
-import { profileApi } from '../../lib/api'
+import api, { shiftsApi, activitiesApi, profileApi } from '../../lib/api'
 import { fmtTime, fmtDate, getDuration, fmtMinutes, getErrorMessage } from '../../lib/utils'
 import { Avatar, Badge, Button, Card, Input, Textarea, Select, Spinner, Alert, EmptyState, Divider, ToastContainer } from '../ui'
 
@@ -256,6 +256,52 @@ export default function WorkerDashboard() {
 
   const reviewedCount = activities.filter(a => a.verification_status !== 'pending').length
 
+  // ── Periodic check-in status ───────────────────────────────────────────────
+  const [checkInStatus, setCheckInStatus] = useState(null)
+  const [showCheckInModal, setShowCheckInModal] = useState(false)
+  const [checkInForm, setCheckInForm] = useState({ tasks: '', note: '' })
+  const [checkInFile, setCheckInFile] = useState(null)
+  const [checkInLoading, setCheckInLoading] = useState(false)
+  const [checkInError, setCheckInError] = useState('')
+
+  const pollCheckInStatus = async () => {
+    if (!shift?.clock_in || shift?.clock_out) return
+    try {
+      const { data } = await api.get('/shifts/check-ins/status')
+      setCheckInStatus(data)
+      if (data.due || data.overdue) setShowCheckInModal(true)
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (shift?.clock_in && !shift?.clock_out) {
+      pollCheckInStatus()
+      const interval = setInterval(pollCheckInStatus, 60000) // poll every minute
+      return () => clearInterval(interval)
+    }
+  }, [shift?.clock_in, shift?.clock_out])
+
+  const handleSubmitCheckIn = async () => {
+    setCheckInError('')
+    if (!checkInForm.tasks || isNaN(parseInt(checkInForm.tasks))) { setCheckInError('Enter number of Outlier tasks completed'); return }
+    if (!checkInFile) { setCheckInError('Screenshot is required'); return }
+    setCheckInLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('outlier_tasks_completed', parseInt(checkInForm.tasks))
+      if (checkInForm.note) formData.append('note', checkInForm.note)
+      formData.append('file', checkInFile)
+      await api.post('/shifts/check-in', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+      toast('Check-in submitted!')
+      setShowCheckInModal(false)
+      setCheckInForm({ tasks: '', note: '' })
+      setCheckInFile(null)
+      await pollCheckInStatus()
+    } catch (err) {
+      setCheckInError(getErrorMessage(err))
+    } finally { setCheckInLoading(false) }
+  }
+
   const handleChangePassword = async () => {
     setPwError('')
     if (!pwForm.current || !pwForm.next) { setPwError('All fields are required'); return }
@@ -459,6 +505,30 @@ export default function WorkerDashboard() {
             </Card>
           )}
 
+          {/* Check-in status banner */}
+          {shift?.clock_in && !shift?.clock_out && checkInStatus && (
+            <div style={{
+              background: checkInStatus.overdue ? 'var(--rose-s)' : checkInStatus.due ? 'var(--amber-s)' : 'var(--emerald-s)',
+              border: `1px solid ${checkInStatus.overdue ? 'var(--rose-b)' : checkInStatus.due ? 'var(--amber-b)' : 'var(--emerald-b)'}`,
+              borderRadius: 'var(--r)', padding: '12px 16px', marginBottom: 16,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap',
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: checkInStatus.overdue ? 'var(--rose)' : checkInStatus.due ? 'var(--amber)' : 'var(--emerald)' }}>
+                  {checkInStatus.overdue ? '⛔ Check-in overdue' : checkInStatus.due ? '🔔 Check-in due now' : `✓ ${checkInStatus.check_in_count} check-in${checkInStatus.check_in_count !== 1 ? 's' : ''} submitted`}
+                </div>
+                {checkInStatus.next_due_at && !checkInStatus.due && !checkInStatus.overdue && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                    Next due at {new Date(checkInStatus.next_due_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
+              </div>
+              {(checkInStatus.due || checkInStatus.overdue) && (
+                <Button variant="primary" size="sm" onClick={() => setShowCheckInModal(true)}>Submit Now</Button>
+              )}
+            </div>
+          )}
+
           {/* Summary chips */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
             {[
@@ -524,6 +594,94 @@ export default function WorkerDashboard() {
           )}
         </div>
       </div>
+
+      {/* Blocked shift warning */}
+      {shift?.is_blocked && (
+        <div style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--rose-s)', border: '1.5px solid var(--rose-b)', borderRadius: 'var(--r-lg)',
+          padding: '14px 20px', zIndex: 30, maxWidth: 'min(480px, 90vw)', width: '100%',
+          boxShadow: 'var(--shadow-xl)',
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--rose)', marginBottom: 4 }}>⛔ Shift Blocked</div>
+          <div style={{ fontSize: 12, color: 'var(--rose)', lineHeight: 1.5 }}>{shift.block_reason}</div>
+          {checkInStatus?.is_blocked && checkInStatus.block_reason?.includes('check-in') && (
+            <Button variant="primary" size="sm" style={{ marginTop: 10 }} onClick={() => setShowCheckInModal(true)}>
+              Submit Check-In Now
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Periodic Check-In Modal */}
+      {showCheckInModal && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 40 }} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: 'min(440px, 92vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',
+            border: `1.5px solid ${checkInStatus?.overdue ? 'var(--rose-b)' : 'var(--amber-b)'}`,
+            boxShadow: 'var(--shadow-xl)', zIndex: 50, padding: 24, maxHeight: '90vh', overflowY: 'auto',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                {checkInStatus?.overdue ? '⛔ Check-In Overdue' : '🔔 Check-In Due'}
+              </div>
+              {!checkInStatus?.overdue && (
+                <button onClick={() => setShowCheckInModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 22 }}>×</button>
+              )}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 20, lineHeight: 1.5 }}>
+              {checkInStatus?.overdue
+                ? 'Your check-in is overdue. Your shift is now blocked until you submit. You cannot clock out without submitting.'
+                : `Time for your periodic check-in. Submit a screenshot of your Outlier dashboard and your task count.`
+              }
+            </div>
+
+            {checkInError && <Alert message={checkInError} type="error" onClose={() => setCheckInError('')} style={{ marginBottom: 12 }} />}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Outlier Tasks Completed *</label>
+                <input
+                  type="number" min={0} placeholder="e.g. 12"
+                  value={checkInForm.tasks}
+                  onChange={e => setCheckInForm(f => ({ ...f, tasks: e.target.value }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Screenshot of Outlier Dashboard *</label>
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+                  borderRadius: 'var(--r)', border: '1px dashed var(--border)',
+                  cursor: 'pointer', fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)',
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                  {checkInFile ? checkInFile.name : 'Choose screenshot (JPEG/PNG/WebP)'}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setCheckInFile(e.target.files[0])} style={{ display: 'none' }} />
+                </label>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Note (optional)</label>
+                <textarea
+                  placeholder="Any notes about this session..."
+                  value={checkInForm.note}
+                  onChange={e => setCheckInForm(f => ({ ...f, note: e.target.value }))}
+                  rows={2}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)', resize: 'vertical', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <Button variant="primary" fullWidth onClick={handleSubmitCheckIn} disabled={checkInLoading}>
+                {checkInLoading ? <><Spinner size={13} color="#fff" /> Submitting…</> : 'Submit Check-In'}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Password Change Modal */}
       {showPwModal && (

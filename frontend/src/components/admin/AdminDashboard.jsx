@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -6,12 +6,15 @@ import { useActivities, useWorkers, useDashboardStats, useToast } from '../../ho
 import { fmtDate, fmtTime, fmtMinutes, getDuration, getErrorMessage } from '../../lib/utils'
 import { Avatar, Badge, Button, Card, Input, Textarea, Select, Toggle, Spinner, Alert, EmptyState, Divider, Modal, ToastContainer, Skeleton } from '../ui'
 import { analyticsApi } from '../../lib/api'
+import api from '../../lib/api'
 
 // ── Sidebar nav items ──────────────────────────────────────────────────────────
 const NAV = [
   { id: 'overview', label: 'Overview',     icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z' },
   { id: 'feed',     label: 'Activity Feed', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
   { id: 'workers',  label: 'Workers',       icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
+  { id: 'attendance', label: 'Attendance',  icon: 'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v5l4 2' },
+  { id: 'settings', label: 'Settings',     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
 ]
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
@@ -344,6 +347,191 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
 }
 
 // ── Admin dashboard ───────────────────────────────────────────────────────────
+
+// ── Settings Panel ────────────────────────────────────────────────────────────
+function SettingsPanel() {
+  const [schedule, setSchedule] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [form, setForm] = useState({ clock_in_deadline_hour: 9, clock_in_deadline_minute: 0, checkin_interval_minutes: 120, grace_period_minutes: 15 })
+
+  useEffect(() => {
+    api.get('/shifts/schedule').then(r => {
+      setSchedule(r.data)
+      setForm(r.data)
+    })
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await api.patch('/shifts/schedule', form)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally { setSaving(false) }
+  }
+
+  if (!schedule) return <div style={{ padding: 32 }}><Skeleton height={200} /></div>
+
+  return (
+    <div style={{ padding: '28px 24px', maxWidth: 520 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Work Schedule Settings</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>Configure punctuality rules and check-in intervals for all workers.</div>
+
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>⏰ Clock-In Deadline</div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>HOUR (0–23 UTC)</label>
+            <input type="number" min={0} max={23} value={form.clock_in_deadline_hour}
+              onChange={e => setForm(f => ({ ...f, clock_in_deadline_hour: parseInt(e.target.value) }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>MINUTE (0–59)</label>
+            <input type="number" min={0} max={59} value={form.clock_in_deadline_minute}
+              onChange={e => setForm(f => ({ ...f, clock_in_deadline_minute: parseInt(e.target.value) }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)' }} />
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
+          Current deadline: <strong>{String(form.clock_in_deadline_hour).padStart(2,'0')}:{String(form.clock_in_deadline_minute).padStart(2,'0')} UTC</strong>
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>🔔 Check-In Interval</div>
+        <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>MINUTES BETWEEN CHECK-INS</label>
+        <input type="number" min={15} max={480} value={form.checkin_interval_minutes}
+          onChange={e => setForm(f => ({ ...f, checkin_interval_minutes: parseInt(e.target.value) }))}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)' }} />
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+          Workers must submit a screenshot + task count every <strong>{form.checkin_interval_minutes} minutes</strong>. Missing a check-in blocks their shift.
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>⚡ Grace Period</div>
+        <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>MINUTES AFTER DEADLINE BEFORE BLOCKING</label>
+        <input type="number" min={0} max={60} value={form.grace_period_minutes}
+          onChange={e => setForm(f => ({ ...f, grace_period_minutes: parseInt(e.target.value) }))}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)' }} />
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+          Workers who clock in within <strong>{form.grace_period_minutes} minutes</strong> after the deadline are flagged late but not blocked.
+        </div>
+      </Card>
+
+      <Button variant="primary" onClick={save} disabled={saving} style={{ minWidth: 140 }}>
+        {saving ? <><Spinner size={13} color="#fff" /> Saving…</> : saved ? '✓ Saved' : 'Save Settings'}
+      </Button>
+    </div>
+  )
+}
+
+// ── Attendance Panel ──────────────────────────────────────────────────────────
+function AttendancePanel({ workers }) {
+  const [shifts, setShifts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [unblocking, setUnblocking] = useState(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/shifts/admin/today')
+      setShifts(data)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const unblock = async (shiftId) => {
+    setUnblocking(shiftId)
+    try {
+      await api.post(`/shifts/${shiftId}/unblock`)
+      await load()
+    } finally { setUnblocking(null) }
+  }
+
+  const totalTasks = (s) => s.check_ins?.reduce((a, c) => a + (c.outlier_tasks_completed || 0), 0) || 0
+
+  return (
+    <div style={{ padding: '28px 24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Today's Attendance</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)' }}>{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
+        </div>
+        <Button variant="secondary" size="sm" onClick={load}>↻ Refresh</Button>
+      </div>
+
+      {/* Summary chips */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total', value: shifts.length, color: 'var(--primary)' },
+          { label: 'On Time', value: shifts.filter(s => s.clock_in && !s.is_late).length, color: 'var(--emerald)' },
+          { label: 'Late', value: shifts.filter(s => s.is_late && !s.is_blocked).length, color: 'var(--amber)' },
+          { label: 'Blocked', value: shifts.filter(s => s.is_blocked).length, color: 'var(--rose)' },
+          { label: 'Clocked Out', value: shifts.filter(s => s.clock_out).length, color: 'var(--text3)' },
+        ].map(c => (
+          <div key={c.label} style={{ padding: '8px 16px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: c.color, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{c.value}</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[...Array(4)].map((_, i) => <Skeleton key={i} height={90} />)}
+        </div>
+      ) : shifts.length === 0 ? (
+        <EmptyState icon="📋" title="No shifts today" sub="Workers haven't clocked in yet." />
+      ) : shifts.map((s, i) => {
+        const worker = workers.find(w => w.id === s.worker_id)
+        return (
+          <div key={s.id} style={{
+            background: 'var(--surface)', border: `1px solid ${s.is_blocked ? 'var(--rose-b)' : s.is_late ? 'var(--amber-b)' : 'var(--border)'}`,
+            borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 10,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Avatar name={worker?.name || 'Worker'} size={36} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{worker?.name || `Worker #${s.worker_id}`}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>{worker?.department || ''}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {s.is_blocked && (
+                  <Button variant="danger" size="sm" onClick={() => unblock(s.id)} disabled={unblocking === s.id}>
+                    {unblocking === s.id ? <Spinner size={11} color="var(--rose)" /> : '🔓 Unblock'}
+                  </Button>
+                )}
+                <Badge status={s.is_blocked ? 'blocked' : s.is_late ? 'pending' : 'approved'} label={s.is_blocked ? 'Blocked' : s.is_late ? 'Late' : 'On Time'} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
+              {s.clock_in && <span>In: <strong style={{ color: 'var(--text)' }}>{new Date(s.clock_in).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</strong></span>}
+              {s.clock_out && <span>Out: <strong style={{ color: 'var(--text)' }}>{new Date(s.clock_out).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</strong></span>}
+              {s.total_minutes && <span>Duration: <strong style={{ color: 'var(--primary)' }}>{Math.floor(s.total_minutes/60)}h {s.total_minutes%60}m</strong></span>}
+              {s.minutes_late && <span style={{ color: 'var(--amber)' }}>⚠ {s.minutes_late}min late</span>}
+              <span>Check-ins: <strong style={{ color: 'var(--text)' }}>{s.check_ins?.length || 0}</strong></span>
+              <span>Outlier Tasks: <strong style={{ color: 'var(--emerald)' }}>{totalTasks(s)}</strong></span>
+            </div>
+
+            {s.is_blocked && s.block_reason && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--rose-s)', borderRadius: 'var(--r)', fontSize: 12, color: 'var(--rose)', borderLeft: '3px solid var(--rose)' }}>
+                {s.block_reason}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
@@ -571,6 +759,14 @@ export default function AdminDashboard() {
 
       {/* Verify drawer */}
       {drawer && <VerifyDrawer activity={drawer} onClose={() => setDrawer(null)} onVerify={handleVerify} />}
+
+      {/* Settings & Attendance panels rendered as full-page overlays over main content */}
+      {(tab === 'settings' || tab === 'attendance') && (
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 220, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
+          {tab === 'settings' && <SettingsPanel />}
+          {tab === 'attendance' && <AttendancePanel workers={workers} />}
+        </div>
+      )}
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>

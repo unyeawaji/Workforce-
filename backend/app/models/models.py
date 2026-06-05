@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime,
-    ForeignKey, Text, Enum as SAEnum, Date,
+    ForeignKey, Text, Enum as SAEnum, Date, Time,
 )
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -44,6 +44,22 @@ class User(Base):
     activities = relationship("Activity", back_populates="worker",
                               foreign_keys="Activity.worker_id", cascade="all, delete-orphan")
     shifts = relationship("Shift", back_populates="worker", cascade="all, delete-orphan")
+    check_ins = relationship("CheckIn", back_populates="worker", cascade="all, delete-orphan")
+
+
+class WorkSchedule(Base):
+    """Admin-configured work schedule — one row, updated in place."""
+    __tablename__ = "work_schedule"
+
+    id = Column(Integer, primary_key=True, default=1)
+    # Latest time workers can clock in before being flagged late (UTC hour:minute)
+    clock_in_deadline_hour = Column(Integer, default=9)
+    clock_in_deadline_minute = Column(Integer, default=0)
+    # How often workers must submit a check-in (minutes)
+    checkin_interval_minutes = Column(Integer, default=120)
+    # Grace period after deadline before blocking (minutes)
+    grace_period_minutes = Column(Integer, default=15)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class Shift(Base):
@@ -55,10 +71,33 @@ class Shift(Base):
     clock_in = Column(DateTime(timezone=True), nullable=True)
     clock_out = Column(DateTime(timezone=True), nullable=True)
     total_minutes = Column(Integer, nullable=True)
-
     screenshot_url = Column(String(500), nullable=True)
 
+    # Punctuality
+    is_late = Column(Boolean, default=False, nullable=False)
+    is_blocked = Column(Boolean, default=False, nullable=False)
+    block_reason = Column(String(255), nullable=True)
+    minutes_late = Column(Integer, nullable=True)
+
     worker = relationship("User", back_populates="shifts")
+    check_ins = relationship("CheckIn", back_populates="shift", cascade="all, delete-orphan")
+
+
+class CheckIn(Base):
+    """Periodic check-in submitted by worker during shift."""
+    __tablename__ = "check_ins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shift_id = Column(Integer, ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False, index=True)
+    worker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    submitted_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+    screenshot_url = Column(String(500), nullable=False)
+    outlier_tasks_completed = Column(Integer, nullable=False)
+    note = Column(Text, nullable=True)
+    is_missed = Column(Boolean, default=False, nullable=False)
+
+    shift = relationship("Shift", back_populates="check_ins")
+    worker = relationship("User", back_populates="check_ins")
 
 
 class Activity(Base):

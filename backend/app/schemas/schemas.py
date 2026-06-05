@@ -60,6 +60,10 @@ class ShiftOut(BaseModel):
     clock_out: Optional[datetime]
     total_minutes: Optional[int]
     screenshot_url: Optional[str] = None
+    is_late: bool = False
+    is_blocked: bool = False
+    block_reason: Optional[str] = None
+    minutes_late: Optional[int] = None
     model_config = {"from_attributes": True}
 
 
@@ -130,3 +134,57 @@ class WeeklyPoint(BaseModel):
 
 class WeeklyStats(BaseModel):
     points: List[WeeklyPoint]
+
+
+# ── Work Schedule ─────────────────────────────────────────────────────────────
+class WorkScheduleOut(BaseModel):
+    id: int
+    clock_in_deadline_hour: int
+    clock_in_deadline_minute: int
+    checkin_interval_minutes: int
+    grace_period_minutes: int
+    model_config = {"from_attributes": True}
+
+
+class WorkScheduleUpdate(BaseModel):
+    clock_in_deadline_hour: Optional[int] = None
+    clock_in_deadline_minute: Optional[int] = None
+    checkin_interval_minutes: Optional[int] = None
+    grace_period_minutes: Optional[int] = None
+
+
+# ── Check-ins ─────────────────────────────────────────────────────────────────
+class CheckInCreate(BaseModel):
+    outlier_tasks_completed: int
+    note: Optional[str] = None
+
+
+class CheckInOut(BaseModel):
+    id: int
+    shift_id: int
+    worker_id: int
+    submitted_at: datetime
+    screenshot_url: str
+    outlier_tasks_completed: int
+    note: Optional[str]
+    is_missed: bool
+    worker: Optional["UserOut"] = None
+    model_config = {"from_attributes": True}
+
+
+# ── Extended ShiftOut with punctuality and check-ins ──────────────────────────
+class ShiftOutFull(BaseModel):
+    id: int
+    worker_id: int
+    date: date
+    clock_in: Optional[datetime]
+    clock_out: Optional[datetime]
+    total_minutes: Optional[int]
+    screenshot_url: Optional[str] = None
+    is_late: bool = False
+    is_blocked: bool = False
+    block_reason: Optional[str] = None
+    minutes_late: Optional[int] = None
+    check_ins: List[CheckInOut] = []
+    worker: Optional["UserOut"] = None
+    model_config = {"from_attributes": True}
