@@ -56,6 +56,8 @@ class Shift(Base):
     clock_out = Column(DateTime(timezone=True), nullable=True)
     total_minutes = Column(Integer, nullable=True)
 
+    screenshot_url = Column(String(500), nullable=True)
+
     worker = relationship("User", back_populates="shifts")
 
 

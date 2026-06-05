@@ -45,11 +45,11 @@ export default function LoginPage() {
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary)', letterSpacing: 1, textTransform: 'uppercase', fontFamily: 'var(--font-mono)' }}>
-              WorkForce Tracker
+              AİİИDUCTION
             </span>
           </div>
           <div style={{ fontSize: 34, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--text)', lineHeight: 1.2 }}>
-            Every hour.<br />Every task.<br /><em style={{ color: 'var(--primary)' }}>Accounted for.</em>
+            Track work.<br />Verify results.<br /><em style={{ color: 'var(--primary)' }}>Powered by AİİИDUCTION.</em>
           </div>
         </div>
 
@@ -82,7 +82,7 @@ export default function LoginPage() {
           </div>
 
           <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textAlign: 'center', lineHeight: 1.7 }}>
-            admin@workforce.local / Admin@1234
+            Contact your admin for login credentials
           </div>
         </div>
       </div>

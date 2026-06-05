@@ -67,3 +67,30 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(requi
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     db.delete(user); db.commit()
+
+
+# ── Password change (self-service) ────────────────────────────────────────────
+from pydantic import BaseModel
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+@router.post("/me/change-password", status_code=204)
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    from app.core.security import verify_password
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+    user.password_hash = get_password_hash(payload.new_password)
+    db.commit()
+    logger.info(f"User {user.id} changed their password")

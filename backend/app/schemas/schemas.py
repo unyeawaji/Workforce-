@@ -59,6 +59,7 @@ class ShiftOut(BaseModel):
     clock_in: Optional[datetime]
     clock_out: Optional[datetime]
     total_minutes: Optional[int]
+    screenshot_url: Optional[str] = None
     model_config = {"from_attributes": True}
 
 

@@ -20,7 +20,7 @@ def seed_admin():
     db = SessionLocal()
     try:
         if not db.query(User).filter(User.role == UserRole.admin).first():
-            admin_email = os.environ.get("ADMIN_EMAIL", "admin@workforce.local")
+            admin_email = os.environ.get("ADMIN_EMAIL", "admin@aiinduction.local")
             admin_password = os.environ.get("ADMIN_PASSWORD")
             if not admin_password:
                 logger.error(

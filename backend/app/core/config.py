@@ -4,7 +4,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "WorkForce Tracker"
+    APP_NAME: str = "AİİИDUCTION"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
@@ -17,8 +17,13 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     # Admin seeding — required on first deploy
-    ADMIN_EMAIL: str = "admin@workforce.local"
+    ADMIN_EMAIL: str = "admin@aiinduction.local"
     ADMIN_PASSWORD: str = ""
+
+    # Cloudinary — required for screenshot uploads
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     @field_validator("SECRET_KEY")
     @classmethod

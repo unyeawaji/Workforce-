@@ -102,6 +102,16 @@ function VerifyDrawer({ activity, onClose, onVerify }) {
               <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>{activity.admin_feedback}</div>
             </div>
           )}
+          {activity.worker?.screenshot_url && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>📸 Work Screenshot</div>
+              <a href={activity.worker.screenshot_url} target="_blank" rel="noopener noreferrer">
+                <img src={activity.worker.screenshot_url} alt="Work screenshot"
+                  style={{ width: '100%', borderRadius: 'var(--r)', border: '1px solid var(--border)', cursor: 'zoom-in', maxHeight: 240, objectFit: 'cover' }} />
+              </a>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Click to view full size</div>
+            </div>
+          )}
         </div>
 
         {/* Decision */}
@@ -145,21 +155,27 @@ function ActivityTable({ activities, workers, loading, onReview }) {
   const [search, setSearch] = useState('')
   const [statusF, setStatusF] = useState('all')
   const [workerF, setWorkerF] = useState('all')
+  const [deptF, setDeptF] = useState('all')
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 15
 
-  const filtered = activities.filter(a => {
+  const allFiltered = activities.filter(a => {
     const ms = !search || a.task_title.toLowerCase().includes(search.toLowerCase()) || a.worker?.name?.toLowerCase().includes(search.toLowerCase())
     const mv = statusF === 'all' || a.verification_status === statusF
     const mw = workerF === 'all' || String(a.worker_id) === workerF
-    return ms && mv && mw
+    const md = deptF === 'all' || a.worker?.department === deptF
+    return ms && mv && mw && md
   })
+  const filtered = allFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.ceil(allFiltered.length / PAGE_SIZE)
 
   const exportData = (fmt) => analyticsApi.triggerExport({ verification_status: statusF !== 'all' ? statusF : undefined, fmt })
 
   return (
     <div>
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative', flex: '1 1 200px' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
+        <div style={{ position: 'relative', flex: '1 1 160px', minWidth: 0 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
@@ -176,22 +192,21 @@ function ActivityTable({ activities, workers, loading, onReview }) {
           <option value="all">All Workers</option>
           {workers.map(w => <option key={w.id} value={String(w.id)}>{w.name}</option>)}
         </select>
+        <select value={deptF} onChange={e => setDeptF(e.target.value)} style={{ padding: '9px 12px', fontSize: 13, background: 'var(--surface)', border: '1.5px solid var(--border)', borderRadius: 'var(--r)', color: 'var(--text)', outline: 'none', cursor: 'pointer', fontFamily: 'var(--font-sans)' }}>
+          <option value="all">All Departments</option>
+          {[...new Set(workers.map(w => w.department).filter(Boolean))].map(d => (
+            <option key={d} value={d}>{d}</option>
+          ))}
+        </select>
         <Button variant="secondary" onClick={() => exportData('csv')}>⬇ CSV</Button>
         <Button variant="secondary" onClick={() => exportData('xlsx')}>⬇ Excel</Button>
       </div>
 
-      {/* Table */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
-        {/* Head */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1fr 110px', padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--surface2)' }}>
-          {['Worker','Task','Date','Duration','Status','Action'].map(h => (
-            <div key={h} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: 'var(--font-mono)' }}>{h}</div>
-          ))}
-        </div>
-
+      {/* Responsive Activity List */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {loading ? (
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {[...Array(5)].map((_, i) => <Skeleton key={i} height={48} />)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[...Array(5)].map((_, i) => <Skeleton key={i} height={80} />)}
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState icon="🔎" title="No results" sub="Try different filters." />
@@ -200,37 +215,52 @@ function ActivityTable({ activities, workers, loading, onReview }) {
           return (
             <div key={a.id} className="anim-fade-up" style={{
               animationDelay: `${i * 35}ms`,
-              display: 'grid', gridTemplateColumns: '1.8fr 2fr 1fr 1fr 1fr 110px',
-              padding: '13px 16px', borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none',
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 'var(--r-lg)', padding: '14px 16px',
               transition: 'background 0.1s',
             }}
               onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              onMouseLeave={e => e.currentTarget.style.background = 'var(--surface)'}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Avatar name={a.worker?.name} size={30} />
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{a.worker?.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.worker?.department}</div>
+              {/* Top row: worker + action */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar name={a.worker?.name} size={32} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>{a.worker?.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.worker?.department}</div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{a.task_title}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.description?.slice(0, 50)}…</div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtDate(a.date)}</div>
-              <div style={{ display: 'flex', alignItems: 'center', fontSize: 12, color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{fmtMinutes(dur)}</div>
-              <div style={{ display: 'flex', alignItems: 'center' }}><Badge status={a.verification_status} /></div>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
                 <Button variant={a.verification_status === 'pending' ? 'primary' : 'secondary'} size="sm" onClick={() => onReview(a)}>
                   {a.verification_status === 'pending' ? 'Review' : 'View'}
                 </Button>
+              </div>
+
+              {/* Task */}
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{a.task_title}</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.4 }}>
+                {a.description?.slice(0, 80)}{a.description?.length > 80 ? '…' : ''}
+              </div>
+
+              {/* Bottom row: date + duration + status */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>{fmtDate(a.date)}</span>
+                {dur && <span style={{ fontSize: 11, color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmtMinutes(dur)}</span>}
+                <Badge status={a.verification_status} />
               </div>
             </div>
           )
         })}
       </div>
-      <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text3)', textAlign: 'right' }}>{filtered.length} of {activities.length} records</div>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16 }}>
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} style={{ padding: '6px 12px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface)', color: page === 1 ? 'var(--text3)' : 'var(--text)', cursor: page === 1 ? 'not-allowed' : 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)' }}>← Prev</button>
+          <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>Page {page} of {totalPages}</span>
+          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ padding: '6px 12px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface)', color: page === totalPages ? 'var(--text3)' : 'var(--text)', cursor: page === totalPages ? 'not-allowed' : 'pointer', fontSize: 12, fontFamily: 'var(--font-sans)' }}>Next →</button>
+        </div>
+      )}
+      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)', textAlign: 'right' }}>{allFiltered.length} total records</div>
     </div>
   )
 }
@@ -276,16 +306,19 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
           }}>
             <Avatar name={w.name} size={40} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>{w.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text3)', display: 'flex', gap: 8 }}>
+              <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span>{w.department || 'No department'}</span>
-                <span>·</span>
-                <span style={{ fontFamily: 'var(--font-mono)' }}>{w.email}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.email}</span>
               </div>
             </div>
-            <Badge status={w.is_active ? 'active' : 'suspended'} />
-            <Toggle checked={w.is_active} onChange={() => onToggle(w.id, w.is_active)} />
-            <Button variant="danger" size="sm" onClick={() => { if (confirm(`Delete ${w.name}?`)) onDelete(w.id) }}>Remove</Button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+              <Badge status={w.is_active ? 'active' : 'suspended'} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Toggle checked={w.is_active} onChange={() => onToggle(w.id, w.is_active)} />
+                <Button variant="danger" size="sm" onClick={() => { if (confirm(`Delete ${w.name}?`)) onDelete(w.id) }}>Remove</Button>
+              </div>
+            </div>
           </div>
         ))}
       </div>
@@ -359,7 +392,7 @@ export default function AdminDashboard() {
         <div style={{ padding: sidebarOpen ? '22px 20px 18px' : '22px 12px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {sidebarOpen ? (
             <>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>WorkForce</div>
+              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>AİİИDUCTION</div>
               <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: 0.5 }}>Admin Console</div>
             </>
           ) : (
@@ -455,6 +488,11 @@ export default function AdminDashboard() {
               </div>
 
               {/* Charts */}
+              {weekly.length === 0 && !statsLoading && (
+                <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--text3)', fontSize: 13, gridColumn: '1 / -1' }}>
+                  No activity data yet — charts will populate once workers start logging tasks.
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16, marginBottom: 28 }}>
                 <Card className="anim-fade-up" style={{ animationDelay: '300ms' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Hours Logged — Last 7 Days</div>

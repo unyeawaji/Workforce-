@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
-import { useActivities, useTodayShift, useToast } from '../../hooks'
+import { useActivities, useTodayShift, useToast, useShiftHistory } from '../../hooks'
+import { profileApi } from '../../lib/api'
 import { fmtTime, fmtDate, getDuration, fmtMinutes, getErrorMessage } from '../../lib/utils'
 import { Avatar, Badge, Button, Card, Input, Textarea, Select, Spinner, Alert, EmptyState, Divider, ToastContainer } from '../ui'
 
@@ -124,6 +125,10 @@ function ActivityForm({ existing, onDone, onCancel }) {
   const submit = async () => {
     if (!form.task_title.trim()) { setError('Task title is required'); return }
     if (!form.description.trim()) { setError('Description is required'); return }
+    if (form.end_time && new Date(form.end_time) <= new Date(form.start_time)) {
+      setError('End time must be after start time'); return
+    }
+    if (new Date(form.date) > new Date()) { setError('Date cannot be in the future'); return }
     setLoading(true); setError('')
     try { await onDone({ ...form, end_time: form.end_time || undefined }) }
     catch (err) { setError(getErrorMessage(err)) }
@@ -241,12 +246,65 @@ export default function WorkerDashboard() {
   const [editItem, setEditItem] = useState(null)
   const [filter, setFilter] = useState('all')
   const [clockError, setClockError] = useState('')
+  const [activeTab, setActiveTab] = useState('today')
+  const [showPwModal, setShowPwModal] = useState(false)
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwLoading, setPwLoading] = useState(false)
+  const [pwError, setPwError] = useState('')
+  const [pwSuccess, setPwSuccess] = useState(false)
+  const { shifts: shiftHistory, loading: historyLoading } = useShiftHistory()
+
+  const reviewedCount = activities.filter(a => a.verification_status !== 'pending').length
+
+  const handleChangePassword = async () => {
+    setPwError('')
+    if (!pwForm.current || !pwForm.next) { setPwError('All fields are required'); return }
+    if (pwForm.next !== pwForm.confirm) { setPwError('New passwords do not match'); return }
+    if (pwForm.next.length < 8) { setPwError('New password must be at least 8 characters'); return }
+    setPwLoading(true)
+    try {
+      await profileApi.changePassword({ current_password: pwForm.current, new_password: pwForm.next })
+      setPwSuccess(true)
+      setPwForm({ current: '', next: '', confirm: '' })
+      setTimeout(() => { setShowPwModal(false); setPwSuccess(false) }, 2000)
+    } catch (err) {
+      setPwError(getErrorMessage(err))
+    } finally {
+      setPwLoading(false)
+    }
+  }
 
   const handleClockIn = async () => {
     setClockError('')
     try { await clockIn(); toast('Clocked in successfully!') }
     catch (err) { setClockError(getErrorMessage(err)) }
   }
+  const [screenshot, setScreenshot] = useState(null)
+  const [screenshotUploading, setScreenshotUploading] = useState(false)
+  const [screenshotUploaded, setScreenshotUploaded] = useState(false)
+
+  const handleScreenshotChange = (e) => {
+    const file = e.target.files[0]
+    if (file) setScreenshot(file)
+  }
+
+  const handleUploadScreenshot = async () => {
+    if (!screenshot) return
+    setScreenshotUploading(true)
+    setClockError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', screenshot)
+      await shiftsApi.uploadScreenshot(formData)
+      setScreenshotUploaded(true)
+      toast('Screenshot uploaded!')
+    } catch (err) {
+      setClockError(getErrorMessage(err))
+    } finally {
+      setScreenshotUploading(false)
+    }
+  }
+
   const handleClockOut = async () => {
     setClockError('')
     try { await clockOut(); toast('Clocked out. Good work today!') }
@@ -280,12 +338,23 @@ export default function WorkerDashboard() {
         display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, flexShrink: 0,
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <div style={{ flex: 1, fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>WorkForce</div>
+        <div style={{ flex: 1, fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>AİİИDUCTION</div>
         <LiveClock />
+        {/* Notification badge */}
+        {reviewedCount > 0 && (
+          <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => setActiveTab('today')}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span style={{ position: 'absolute', top: -4, right: -4, background: 'var(--rose)', color: '#fff', borderRadius: '50%', fontSize: 9, fontWeight: 700, width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{reviewedCount}</span>
+          </div>
+        )}
         <button onClick={toggleTheme} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, display: 'flex', borderRadius: 'var(--r-sm)' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             {dark ? <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" /> : <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />}
           </svg>
+        </button>
+        {/* Password change */}
+        <button onClick={() => setShowPwModal(true)} title="Change password" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </button>
         <Avatar name={user?.name} size={30} />
         <button onClick={logout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }}>
@@ -303,9 +372,92 @@ export default function WorkerDashboard() {
             <div style={{ fontSize: 24, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{user?.name?.split(' ')[0]}</div>
           </div>
 
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 3, marginBottom: 20, padding: 4, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+            {[['today', 'Today'], ['history', 'History']].map(([v, l]) => (
+              <button key={v} onClick={() => setActiveTab(v)} style={{
+                flex: 1, padding: '7px 4px', borderRadius: 'var(--r-sm)', border: 'none', cursor: 'pointer',
+                fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
+                background: activeTab === v ? 'var(--surface)' : 'transparent',
+                color: activeTab === v ? 'var(--text)' : 'var(--text3)',
+                boxShadow: activeTab === v ? 'var(--shadow-sm)' : 'none', transition: 'all 0.15s',
+              }}>{l}</button>
+            ))}
+          </div>
+
           {clockError && <Alert message={clockError} type="error" onClose={() => setClockError('')} style={{ marginBottom: 16 }} />}
 
+          {activeTab === 'history' ? (
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Shift History</div>
+              {historyLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[...Array(4)].map((_, i) => <div key={i} className="skeleton" style={{ height: 70 }} />)}
+                </div>
+              ) : shiftHistory.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)', fontSize: 13 }}>No shift history yet.</div>
+              ) : shiftHistory.map((s, i) => (
+                <div key={s.id} className="anim-fade-up" style={{
+                  animationDelay: `${i * 40}ms`,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 10,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                    {s.total_minutes ? (
+                      <span style={{ fontSize: 12, color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                        {Math.floor(s.total_minutes / 60)}h {s.total_minutes % 60}m
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>In progress</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 5, display: 'flex', gap: 12 }}>
+                    {s.clock_in && <span>In: {new Date(s.clock_in).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
+                    {s.clock_out && <span>Out: {new Date(s.clock_out).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
+                    {s.screenshot_url && <span style={{ color: 'var(--emerald)' }}>📸 Screenshot</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <>
           <ClockHero shift={shift} onClockIn={handleClockIn} onClockOut={handleClockOut} loading={shiftLoading} />
+
+          {/* Screenshot upload — shown when clocked in and not yet clocked out */}
+          {shift?.clock_in && !shift?.clock_out && (
+            <Card style={{ marginBottom: 20, padding: '16px' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>
+                📸 Upload Screenshot Before Clocking Out
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>
+                A screenshot is required to clock out. Upload proof of your work.
+              </div>
+              {screenshotUploaded ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--emerald)', fontSize: 13, fontWeight: 500 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                  Screenshot uploaded successfully
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{
+                    padding: '8px 14px', borderRadius: 'var(--r)', border: '1px dashed var(--border)',
+                    cursor: 'pointer', fontSize: 13, color: 'var(--text2)', background: 'var(--surface2)',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+                    {screenshot ? screenshot.name : 'Choose image'}
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleScreenshotChange} style={{ display: 'none' }} />
+                  </label>
+                  {screenshot && (
+                    <Button variant="primary" size="sm" onClick={handleUploadScreenshot} disabled={screenshotUploading}>
+                      {screenshotUploading ? <><Spinner size={12} color="#fff" /> Uploading…</> : 'Upload'}
+                    </Button>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Summary chips */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -368,8 +520,42 @@ export default function WorkerDashboard() {
               ))}
             </div>
           )}
+          </>
+          )}
         </div>
       </div>
+
+      {/* Password Change Modal */}
+      {showPwModal && (
+        <>
+          <div onClick={() => setShowPwModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 40 }} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            width: 'min(400px, 90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',
+            border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', zIndex: 50, padding: 24,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Change Password</div>
+              <button onClick={() => setShowPwModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 22 }}>×</button>
+            </div>
+            {pwSuccess ? (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--emerald)', fontSize: 14, fontWeight: 500 }}>
+                ✓ Password changed successfully
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {pwError && <Alert message={pwError} type="error" onClose={() => setPwError('')} />}
+                <Input label="Current Password" type="password" value={pwForm.current} onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))} placeholder="••••••••" />
+                <Input label="New Password" type="password" value={pwForm.next} onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))} placeholder="Min. 8 characters" />
+                <Input label="Confirm New Password" type="password" value={pwForm.confirm} onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))} placeholder="••••••••" />
+                <Button variant="primary" fullWidth onClick={handleChangePassword} disabled={pwLoading} style={{ marginTop: 4 }}>
+                  {pwLoading ? <><Spinner size={13} color="#fff" /> Updating…</> : 'Update Password'}
+                </Button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>

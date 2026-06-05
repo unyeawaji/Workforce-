@@ -180,3 +180,51 @@ export function useToast() {
 
   return { toasts, toast: add, removeToast: remove }
 }
+
+// ── Shift history ─────────────────────────────────────────────────────────────
+export function useShiftHistory() {
+  const [shifts, setShifts] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data } = await shiftsApi.list()
+      setShifts(data)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+  return { shifts, loading, refetch: load }
+}
+
+// ── Paginated activities ───────────────────────────────────────────────────────
+export function usePaginatedActivities(params = {}, pageSize = 20) {
+  const [activities, setActivities] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await activitiesApi.list({ ...params, skip: (page - 1) * pageSize, limit: pageSize })
+      setActivities(Array.isArray(data) ? data : data.items || data)
+      setTotal(Array.isArray(data) ? data.length : data.total || data.length)
+    } finally {
+      setLoading(false)
+    }
+  }, [JSON.stringify(params), page])
+
+  useEffect(() => { load() }, [load])
+
+  const verify = async (id, payload) => {
+    const { data } = await activitiesApi.verify(id, payload)
+    setActivities(prev => prev.map(a => a.id === id ? data : a))
+    return data
+  }
+
+  return { activities, loading, total, page, setPage, pageSize, refetch: load, verify }
+}
