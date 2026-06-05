@@ -32,7 +32,7 @@ def create(payload: ActivityCreate, db=Depends(get_db), user=Depends(get_current
         raise HTTPException(400, "Only workers can submit activities")
     a = Activity(worker_id=user.id, **payload.model_dump())
     db.add(a); db.commit(); db.refresh(a)
-    logger.info(f"Worker {user.id} created activity {a.id}")
+    logger.info("Worker %s created activity %s", user.id, a.id)
     return _get(a.id, db)
 
 
@@ -110,5 +110,5 @@ def verify(activity_id: int, payload: VerifyActivityRequest, db=Depends(get_db),
     a.verified_at = datetime.now(timezone.utc)
     a.updated_at = datetime.now(timezone.utc)
     db.commit()
-    logger.info(f"Admin {admin.id} set activity {activity_id} → {payload.verification_status}")
+    logger.info("Admin %s set activity %s → %s", admin.id, activity_id, payload.verification_status)
     return _get(activity_id, db)

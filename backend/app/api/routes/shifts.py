@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
-from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate, CheckInCreate
+from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate
 from app.api.deps import get_current_user, require_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
+from app.core.schedule_utils import get_work_window_status
 
 router = APIRouter(prefix="/shifts", tags=["Shifts"])
 logger = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ def update_schedule(payload: WorkScheduleUpdate, db: Session = Depends(get_db), 
         setattr(s, k, v)
     db.commit()
     db.refresh(s)
-    logger.info(f"Admin updated work schedule")
+    logger.info("Admin updated work schedule")
     return WorkScheduleOut.model_validate(s)
 
 
@@ -99,15 +100,21 @@ def clock_in(db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not shift:
         shift = Shift(worker_id=user.id, date=t)
         db.add(shift)
+    # Enforce work window
+    window = get_work_window_status(db, now)
+    if not window.can_clock_in:
+        db.rollback()
+        raise HTTPException(403, window.message)
+
     shift.clock_in = now
     schedule = _get_schedule(db)
     _check_punctuality(shift, schedule, now)
     db.commit()
     db.refresh(shift)
     if shift.is_blocked:
-        logger.warning(f"Worker {user.id} blocked for late clock-in: {shift.block_reason}")
+        logger.warning("Worker %s blocked for late clock-in: %s", user.id, shift.block_reason)
     else:
-        logger.info(f"Worker {user.id} clocked in{'  (LATE)' if shift.is_late else ''}")
+        logger.info("Worker %s clocked in%s", user.id, '  (LATE)' if shift.is_late else '')
     return ShiftOut.model_validate(shift)
 
 
@@ -144,9 +151,10 @@ async def submit_checkin(
         raise HTTPException(400, "Screenshot must be under 5MB")
 
     try:
-        url = cloudinary_upload(contents, user.id, shift.id, prefix=f"checkin_{len(shift.check_ins)+1}")
+        seq = len(shift.check_ins) + 1  # human-readable sequence label; uniqueness guaranteed by timestamp in upload
+        url = cloudinary_upload(contents, user.id, shift.id, prefix=f"checkin_{seq}")
     except Exception as e:
-        logger.error(f"Cloudinary check-in upload failed: {e}")
+        logger.error("Cloudinary check-in upload failed: %s", e)
         raise HTTPException(500, "Failed to upload screenshot. Please try again.")
 
     checkin = CheckIn(
@@ -159,7 +167,7 @@ async def submit_checkin(
     db.add(checkin)
     db.commit()
     db.refresh(checkin)
-    logger.info(f"Worker {user.id} submitted check-in #{len(shift.check_ins)} with {outlier_tasks_completed} tasks")
+    logger.info("Worker %s submitted check-in #%s with %s tasks", user.id, len(shift.check_ins), outlier_tasks_completed)
     return CheckInOut.model_validate(checkin)
 
 
@@ -224,7 +232,7 @@ async def upload_screenshot_endpoint(
     try:
         url = cloudinary_upload(contents, user.id, shift.id)
     except Exception as e:
-        logger.error(f"Cloudinary upload failed: {e}")
+        logger.error("Cloudinary upload failed: %s", e)
         raise HTTPException(500, "Failed to upload screenshot. Please try again.")
 
     shift.screenshot_url = url
@@ -268,7 +276,7 @@ def clock_out(db: Session = Depends(get_db), user=Depends(get_current_user)):
     shift.total_minutes = int((now - shift.clock_in).total_seconds() / 60)
     db.commit()
     db.refresh(shift)
-    logger.info(f"Worker {user.id} clocked out. Duration: {shift.total_minutes}m, Check-ins: {len(shift.check_ins)}")
+    logger.info("Worker %s clocked out. Duration: %sm, Check-ins: %s", user.id, shift.total_minutes, len(shift.check_ins))
     return ShiftOut.model_validate(shift)
 
 
@@ -326,5 +334,5 @@ def unblock_shift(shift_id: int, db: Session = Depends(get_db), admin=Depends(re
     shift.block_reason = None
     db.commit()
     db.refresh(shift)
-    logger.info(f"Admin {admin.id} unblocked shift {shift_id}")
+    logger.info("Admin %s unblocked shift %s", admin.id, shift_id)
     return ShiftOut.model_validate(shift)

@@ -625,6 +625,162 @@ function SettingsPanel() {
       <Button variant="primary" onClick={save} disabled={saving} style={{ minWidth: 140 }}>
         {saving ? <><Spinner size={13} color="#fff" /> Saving…</> : saved ? '✓ Saved' : 'Save Settings'}
       </Button>
+
+      {/* ── Weekly Schedule ── */}
+      <div style={{ fontSize: 15, fontWeight: 700, marginTop: 36, marginBottom: 6 }}>Weekly Work Schedule</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Set working hours per day of the week. Workers cannot clock in outside these hours.</div>
+      <WeeklyScheduleEditor />
+
+      {/* ── Holidays ── */}
+      <div style={{ fontSize: 15, fontWeight: 700, marginTop: 36, marginBottom: 6 }}>Holidays & Off Days</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Block specific dates — workers cannot clock in on these days.</div>
+      <HolidayEditor />
+    </div>
+  )
+}
+
+// ── Weekly Schedule Editor ────────────────────────────────────────────────────
+const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+
+function WeeklyScheduleEditor() {
+  const [days, setDays] = useState([])
+  const [saving, setSaving] = useState(null)
+
+  useEffect(() => {
+    api.get('/schedule/days').then(r => setDays(r.data))
+  }, [])
+
+  const update = async (dow, field, value) => {
+    setDays(prev => prev.map(d => d.day_of_week === dow ? { ...d, [field]: value } : d))
+  }
+
+  const save = async (dow) => {
+    const d = days.find(x => x.day_of_week === dow)
+    if (!d) return
+    setSaving(dow)
+    try {
+      await api.put(`/schedule/days/${dow}`, {
+        is_working_day: d.is_working_day,
+        work_start_hour: d.work_start_hour,
+        work_start_minute: d.work_start_minute,
+        work_end_hour: d.work_end_hour,
+        work_end_minute: d.work_end_minute,
+      })
+    } finally { setSaving(null) }
+  }
+
+  if (!days.length) return <Skeleton height={300} />
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {days.map(d => (
+        <Card key={d.day_of_week} style={{ padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ width: 96, fontSize: 13, fontWeight: 600 }}>{DAY_NAMES[d.day_of_week]}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--text3)' }}>
+              <input type="checkbox" checked={d.is_working_day}
+                onChange={e => update(d.day_of_week, 'is_working_day', e.target.checked)}
+                style={{ accentColor: 'var(--primary)', width: 14, height: 14 }} />
+              Working day
+            </label>
+            {d.is_working_day && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>Start</span>
+                  <input type="number" min={0} max={23} value={d.work_start_hour}
+                    onChange={e => update(d.day_of_week, 'work_start_hour', parseInt(e.target.value))}
+                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                  <span style={{ color: 'var(--text3)' }}>:</span>
+                  <input type="number" min={0} max={59} value={d.work_start_minute}
+                    onChange={e => update(d.day_of_week, 'work_start_minute', parseInt(e.target.value))}
+                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span style={{ color: 'var(--text3)' }}>End</span>
+                  <input type="number" min={0} max={23} value={d.work_end_hour}
+                    onChange={e => update(d.day_of_week, 'work_end_hour', parseInt(e.target.value))}
+                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                  <span style={{ color: 'var(--text3)' }}>:</span>
+                  <input type="number" min={0} max={59} value={d.work_end_minute}
+                    onChange={e => update(d.day_of_week, 'work_end_minute', parseInt(e.target.value))}
+                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>UTC</div>
+              </>
+            )}
+            {!d.is_working_day && <span style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic' }}>Off day</span>}
+            <Button variant="secondary" size="sm" onClick={() => save(d.day_of_week)} disabled={saving === d.day_of_week} style={{ marginLeft: 'auto' }}>
+              {saving === d.day_of_week ? <Spinner size={11} /> : 'Save'}
+            </Button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+// ── Holiday Editor ────────────────────────────────────────────────────────────
+function HolidayEditor() {
+  const [holidays, setHolidays] = useState([])
+  const [form, setForm] = useState({ date: '', name: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    const { data } = await api.get('/schedule/holidays')
+    setHolidays(data)
+  }
+
+  useEffect(() => { load() }, [])
+
+  const add = async () => {
+    setError('')
+    if (!form.date || !form.name.trim()) { setError('Date and name are required'); return }
+    setSaving(true)
+    try {
+      await api.post('/schedule/holidays', form)
+      setForm({ date: '', name: '' })
+      await load()
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to add holiday')
+    } finally { setSaving(false) }
+  }
+
+  const remove = async (id) => {
+    await api.delete(`/schedule/holidays/${id}`)
+    await load()
+  }
+
+  return (
+    <div>
+      {error && <Alert message={error} type="error" onClose={() => setError('')} style={{ marginBottom: 12 }} />}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 5 }}>DATE</label>
+          <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ flex: '2 1 180px' }}>
+          <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 5 }}>HOLIDAY NAME</label>
+          <input type="text" placeholder="e.g. Christmas Day" value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+        </div>
+        <Button variant="primary" onClick={add} disabled={saving} style={{ height: 38, flexShrink: 0 }}>
+          {saving ? <Spinner size={12} color="#fff" /> : '+ Add'}
+        </Button>
+      </div>
+      {holidays.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--text3)', fontStyle: 'italic' }}>No holidays added yet.</div>
+      ) : holidays.map(h => (
+        <div key={h.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)', marginBottom: 6 }}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>{h.name}</span>
+            <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginLeft: 10 }}>{h.date}</span>
+          </div>
+          <button onClick={() => remove(h.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rose)', fontSize: 18, lineHeight: 1 }}>×</button>
+        </div>
+      ))}
     </div>
   )
 }
@@ -781,7 +937,20 @@ export default function AdminDashboard() {
         <div style={{ padding: sidebarOpen ? '22px 20px 18px' : '22px 12px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
           {sidebarOpen ? (
             <>
-              <div style={{ fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>AİİИDUCTION</div>
+              <div style={{ flex: 1 }}>            <svg width="130" height="32" viewBox="0 0 130 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="tlg" x1="0" y1="0" x2="130" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="var(--primary)"/>
+                  <stop offset="100%" stopColor="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <rect x="0.6" y="0.6" width="128.8" height="30.8" rx="7" fill="url(#tlg)" fillOpacity="0.08" stroke="url(#tlg)" strokeWidth="0.8" strokeOpacity="0.35"/>
+              <path d="M4 8 L4 1 L11 1" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M119 1 L126 1 L126 8" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M4 24 L4 31 L11 31" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M119 31 L126 31 L126 24" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <text x="65" y="20" textAnchor="middle" fontFamily="'Georgia', serif" fontSize="11.5" fontWeight="700" fontStyle="italic" letterSpacing="2" fill="url(#tlg)">AİİИDUCTION</text>
+            </svg></div>
               <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: 0.5 }}>Admin Console</div>
             </>
           ) : (

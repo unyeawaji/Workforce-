@@ -37,7 +37,7 @@ def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), ad
         db.add(rate)
     db.commit()
     db.refresh(rate)
-    logger.info(f"Admin set {payload.department} rate to {payload.hourly_rate_cents} cents")
+    logger.info("Admin set %s rate to %s cents", payload.department, payload.hourly_rate_cents)
     return DepartmentRateOut.model_validate(rate)
 
 

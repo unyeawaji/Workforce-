@@ -1,8 +1,9 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, verify_password
 from app.db.database import get_db
 from app.models.models import User, UserRole
 from app.schemas.schemas import UserCreate, UserUpdate, UserOut
@@ -22,7 +23,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depend
         role=payload.role, department=payload.department,
     )
     db.add(user); db.commit(); db.refresh(user)
-    logger.info(f"Admin {admin.id} created user {user.id}")
+    logger.info("Admin %s created user %s", admin.id, user.id)
     return UserOut.model_validate(user)
 
 
@@ -40,6 +41,7 @@ def list_users(
 
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    # Deny first — do not leak whether user_id exists to unauthorised callers
     if current_user.role != UserRole.admin and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     user = db.query(User).filter(User.id == user_id).first()
@@ -53,9 +55,13 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Prevent admin from demoting their own account (would lock out the system)
+    if user.id == admin.id and payload.role is not None and payload.role != UserRole.admin:
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(user, k, v)
     db.commit(); db.refresh(user)
+    logger.info("Admin %s updated user %s", admin.id, user.id)
     return UserOut.model_validate(user)
 
 
@@ -67,18 +73,15 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(requi
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
     db.delete(user); db.commit()
+    logger.info("Admin %s deleted user %s", admin.id, user_id)
 
 
 # ── Password change (self-service) ────────────────────────────────────────────
-from pydantic import BaseModel
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
 
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
 
 @router.post("/me/change-password", status_code=204)
 def change_password(
@@ -86,11 +89,10 @@ def change_password(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    from app.core.security import verify_password
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     if len(payload.new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
     user.password_hash = get_password_hash(payload.new_password)
     db.commit()
-    logger.info(f"User {user.id} changed their password")
+    logger.info("User %s changed their password", user.id)

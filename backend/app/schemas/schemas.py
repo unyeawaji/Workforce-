@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from app.models.models import UserRole, ActivityStatus, VerificationStatus
 
 
@@ -147,10 +147,10 @@ class WorkScheduleOut(BaseModel):
 
 
 class WorkScheduleUpdate(BaseModel):
-    clock_in_deadline_hour: Optional[int] = None
-    clock_in_deadline_minute: Optional[int] = None
-    checkin_interval_minutes: Optional[int] = None
-    grace_period_minutes: Optional[int] = None
+    clock_in_deadline_hour: Optional[int] = Field(None, ge=0, le=23)
+    clock_in_deadline_minute: Optional[int] = Field(None, ge=0, le=59)
+    checkin_interval_minutes: Optional[int] = Field(None, ge=5)   # min 5 min interval
+    grace_period_minutes: Optional[int] = Field(None, ge=0, le=120)
 
 
 # ── Check-ins ─────────────────────────────────────────────────────────────────
@@ -218,3 +218,50 @@ class WorkerPayrollOut(BaseModel):
     shift_count: int
     check_in_count: int
     outlier_tasks_total: int
+
+
+# ── Day Schedule & Holidays ───────────────────────────────────────────────────
+class DayScheduleOut(BaseModel):
+    id: int
+    day_of_week: int
+    is_working_day: bool
+    work_start_hour: int
+    work_start_minute: int
+    work_end_hour: int
+    work_end_minute: int
+    model_config = {"from_attributes": True}
+
+
+class DayScheduleUpdate(BaseModel):
+    is_working_day: bool
+    work_start_hour: int = Field(ge=0, le=23)
+    work_start_minute: int = Field(ge=0, le=59)
+    work_end_hour: int = Field(ge=0, le=23)
+    work_end_minute: int = Field(ge=0, le=59)
+
+
+class HolidayCreate(BaseModel):
+    date: date
+    name: str
+
+
+class HolidayOut(BaseModel):
+    id: int
+    date: date
+    name: str
+    model_config = {"from_attributes": True}
+
+
+class WorkWindowStatus(BaseModel):
+    """Returned to workers so they know if they can clock in."""
+    can_clock_in: bool
+    is_holiday: bool
+    holiday_name: Optional[str] = None
+    is_working_day: bool
+    work_start_hour: int
+    work_start_minute: int
+    work_end_hour: int
+    work_end_minute: int
+    message: str
+    next_window_day: Optional[str] = None   # e.g. "Monday"
+    next_window_start: Optional[str] = None  # e.g. "09:00"

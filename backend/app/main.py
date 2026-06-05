@@ -3,10 +3,13 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.core.security import get_password_hash
 from app.db.database import engine, Base, SessionLocal
-from app.api.routes import auth, users, activities, shifts, analytics, payroll
+from app.api.routes import auth, users, activities, shifts, analytics, payroll, schedule
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,6 +62,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Attach limiter state and its 429 handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_origins(),
@@ -74,6 +81,7 @@ app.include_router(shifts.router, prefix=PREFIX)
 app.include_router(activities.router, prefix=PREFIX)
 app.include_router(analytics.router, prefix=PREFIX)
 app.include_router(payroll.router, prefix=PREFIX)
+app.include_router(schedule.router, prefix=PREFIX)
 
 
 @app.get("/health")

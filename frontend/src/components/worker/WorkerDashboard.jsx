@@ -256,6 +256,53 @@ export default function WorkerDashboard() {
 
   const reviewedCount = activities.filter(a => a.verification_status !== 'pending').length
 
+  // ── Work window status & countdown ──────────────────────────────────────────
+  const [workWindow, setWorkWindow] = useState(null)
+  const [countdown, setCountdown] = useState('')
+
+  const fetchWorkWindow = async () => {
+    try {
+      const { data } = await api.get('/schedule/window')
+      setWorkWindow(data)
+    } catch {}
+  }
+
+  useEffect(() => {
+    fetchWorkWindow()
+    const interval = setInterval(fetchWorkWindow, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Countdown timer — counts down to next window start
+  useEffect(() => {
+    if (!workWindow || workWindow.can_clock_in || !workWindow.next_window_start || !workWindow.next_window_day) {
+      setCountdown('')
+      return
+    }
+    const tick = () => {
+      const now = new Date()
+      const [h, m] = workWindow.next_window_start.split(':').map(Number)
+      // Find next occurrence of next_window_day at h:m UTC
+      const dayMap = { Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6, Sunday:0 }
+      const target = new Date()
+      target.setUTCHours(h, m, 0, 0)
+      const todayDay = now.getUTCDay()
+      const targetDay = dayMap[workWindow.next_window_day]
+      let daysAhead = (targetDay - todayDay + 7) % 7
+      if (daysAhead === 0 && now.getUTCHours() * 60 + now.getUTCMinutes() >= h * 60 + m) daysAhead = 7
+      target.setUTCDate(target.getUTCDate() + daysAhead)
+      const diff = target - now
+      if (diff <= 0) { fetchWorkWindow(); return }
+      const hours = Math.floor(diff / 3600000)
+      const mins = Math.floor((diff % 3600000) / 60000)
+      const secs = Math.floor((diff % 60000) / 1000)
+      setCountdown(`${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`)
+    }
+    tick()
+    const t = setInterval(tick, 1000)
+    return () => clearInterval(t)
+  }, [workWindow])
+
   // ── Periodic check-in status ───────────────────────────────────────────────
   const [checkInStatus, setCheckInStatus] = useState(null)
   const [showCheckInModal, setShowCheckInModal] = useState(false)
@@ -384,7 +431,20 @@ export default function WorkerDashboard() {
         display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12, flexShrink: 0,
         position: 'sticky', top: 0, zIndex: 50,
       }}>
-        <div style={{ flex: 1, fontSize: 16, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>AİİИDUCTION</div>
+        <div style={{ flex: 1 }}>            <svg width="130" height="32" viewBox="0 0 130 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="tlg" x1="0" y1="0" x2="130" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="var(--primary)"/>
+                  <stop offset="100%" stopColor="#38bdf8"/>
+                </linearGradient>
+              </defs>
+              <rect x="0.6" y="0.6" width="128.8" height="30.8" rx="7" fill="url(#tlg)" fillOpacity="0.08" stroke="url(#tlg)" strokeWidth="0.8" strokeOpacity="0.35"/>
+              <path d="M4 8 L4 1 L11 1" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M119 1 L126 1 L126 8" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M4 24 L4 31 L11 31" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <path d="M119 31 L126 31 L126 24" stroke="url(#tlg)" strokeWidth="1.2" strokeLinecap="round" fill="none" strokeOpacity="0.6"/>
+              <text x="65" y="20" textAnchor="middle" fontFamily="'Georgia', serif" fontSize="11.5" fontWeight="700" fontStyle="italic" letterSpacing="2" fill="url(#tlg)">AİİИDUCTION</text>
+            </svg></div>
         <LiveClock />
         {/* Notification badge */}
         {reviewedCount > 0 && (
@@ -430,6 +490,37 @@ export default function WorkerDashboard() {
               }}>{l}</button>
             ))}
           </div>
+
+          {/* Work window status banner */}
+          {workWindow && !shift?.clock_in && (
+            <div style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 'var(--r-lg)',
+              background: workWindow.can_clock_in ? 'var(--emerald-s)' : workWindow.is_holiday ? 'var(--violet-s)' : 'var(--surface2)',
+              border: `1px solid ${workWindow.can_clock_in ? 'var(--emerald-b)' : workWindow.is_holiday ? 'var(--violet-b)' : 'var(--border)'}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: workWindow.can_clock_in ? 'var(--emerald)' : workWindow.is_holiday ? 'var(--violet)' : 'var(--text)', marginBottom: 3 }}>
+                    {workWindow.can_clock_in ? '✅ Work hours are active' : workWindow.is_holiday ? `🎉 Holiday: ${workWindow.holiday_name}` : '🕐 Outside work hours'}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>{workWindow.message}</div>
+                  {!workWindow.can_clock_in && workWindow.next_window_day && (
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                      Next window: <strong style={{ color: 'var(--text)' }}>{workWindow.next_window_day} at {workWindow.next_window_start} UTC</strong>
+                    </div>
+                  )}
+                </div>
+                {!workWindow.can_clock_in && countdown && (
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--primary)', letterSpacing: 2 }}>{countdown}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)' }}>Until next window</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {clockError && <Alert message={clockError} type="error" onClose={() => setClockError('')} style={{ marginBottom: 16 }} />}
 

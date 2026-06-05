@@ -62,6 +62,30 @@ class WorkSchedule(Base):
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
+class DaySchedule(Base):
+    """Per-day-of-week work window set by admin. day_of_week: 0=Mon, 6=Sun."""
+    __tablename__ = "day_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    day_of_week = Column(Integer, unique=True, nullable=False)  # 0=Mon … 6=Sun
+    is_working_day = Column(Boolean, default=True, nullable=False)
+    work_start_hour = Column(Integer, default=9)
+    work_start_minute = Column(Integer, default=0)
+    work_end_hour = Column(Integer, default=17)
+    work_end_minute = Column(Integer, default=0)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class Holiday(Base):
+    """Specific dates blocked as holidays/off days."""
+    __tablename__ = "holidays"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+
 class Shift(Base):
     __tablename__ = "shifts"
 
