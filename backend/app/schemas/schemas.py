@@ -188,3 +188,33 @@ class ShiftOutFull(BaseModel):
     check_ins: List[CheckInOut] = []
     worker: Optional["UserOut"] = None
     model_config = {"from_attributes": True}
+
+
+# ── Department Rates & Payroll ─────────────────────────────────────────────────
+class DepartmentRateUpsert(BaseModel):
+    department: str
+    hourly_rate_cents: int  # e.g. 1500 = $15.00
+    currency: str = "USD"
+
+
+class DepartmentRateOut(BaseModel):
+    id: int
+    department: str
+    hourly_rate_cents: int
+    currency: str
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class WorkerPayrollOut(BaseModel):
+    worker_id: int
+    worker_name: str
+    department: Optional[str]
+    total_minutes: int
+    total_hours: float
+    hourly_rate_cents: int
+    currency: str
+    gross_pay_cents: int  # total_hours * hourly_rate_cents
+    shift_count: int
+    check_in_count: int
+    outlier_tasks_total: int

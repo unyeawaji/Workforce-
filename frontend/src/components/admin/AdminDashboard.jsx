@@ -14,6 +14,7 @@ const NAV = [
   { id: 'feed',     label: 'Activity Feed', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
   { id: 'workers',  label: 'Workers',       icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
   { id: 'attendance', label: 'Attendance',  icon: 'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v5l4 2' },
+  { id: 'payroll',  label: 'Payroll',      icon: 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { id: 'settings', label: 'Settings',     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
 ]
 
@@ -347,6 +348,206 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
 }
 
 // ── Admin dashboard ───────────────────────────────────────────────────────────
+
+// ── Payroll Panel ────────────────────────────────────────────────────────────
+function PayrollPanel({ workers }) {
+  const [rates, setRates] = useState([])
+  const [payroll, setPayroll] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [rateForm, setRateForm] = useState({ department: '', amount: '', currency: 'USD' })
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
+
+  const departments = [...new Set(workers.map(w => w.department).filter(Boolean))]
+
+  const loadRates = async () => {
+    const { data } = await api.get('/payroll/rates')
+    setRates(data)
+  }
+
+  const loadPayroll = async () => {
+    setLoading(true)
+    try {
+      const params = {}
+      if (dateFrom) params.date_from = dateFrom
+      if (dateTo) params.date_to = dateTo
+      const { data } = await api.get('/payroll/summary', { params })
+      setPayroll(data)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    loadRates()
+    loadPayroll()
+  }, [])
+
+  const saveRate = async () => {
+    setError('')
+    if (!rateForm.department) { setError('Select a department'); return }
+    if (!rateForm.amount || isNaN(parseFloat(rateForm.amount))) { setError('Enter a valid hourly rate'); return }
+    setSaving(true)
+    try {
+      await api.post('/payroll/rates', {
+        department: rateForm.department,
+        hourly_rate_cents: Math.round(parseFloat(rateForm.amount) * 100),
+        currency: rateForm.currency,
+      })
+      await loadRates()
+      setSaved(true)
+      setRateForm({ department: '', amount: '', currency: 'USD' })
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to save rate')
+    } finally { setSaving(false) }
+  }
+
+  const deleteRate = async (dept) => {
+    if (!confirm(`Remove rate for ${dept}?`)) return
+    await api.delete(`/payroll/rates/${encodeURIComponent(dept)}`)
+    await loadRates()
+  }
+
+  const fmt = (cents, currency) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(cents / 100)
+  }
+
+  const totalPayroll = payroll.reduce((s, w) => s + w.gross_pay_cents, 0)
+  const totalHours = payroll.reduce((s, w) => s + w.total_hours, 0)
+  const totalTasks = payroll.reduce((s, w) => s + w.outlier_tasks_total, 0)
+
+  return (
+    <div style={{ padding: '28px 24px', maxWidth: 800 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Payroll</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>Set hourly rates per department and view worker pay summaries.</div>
+
+      {/* Rate setter */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>💰 Set Hourly Rate by Department</div>
+        {error && <Alert message={error} type="error" onClose={() => setError('')} style={{ marginBottom: 12 }} />}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 160px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>DEPARTMENT</label>
+            <select value={rateForm.department} onChange={e => setRateForm(f => ({ ...f, department: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)' }}>
+              <option value="">Select dept...</option>
+              {departments.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '1 1 120px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>HOURLY RATE</label>
+            <input type="number" min="0" step="0.01" placeholder="e.g. 15.00"
+              value={rateForm.amount} onChange={e => setRateForm(f => ({ ...f, amount: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-mono)', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: '0 0 90px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>CURRENCY</label>
+            <select value={rateForm.currency} onChange={e => setRateForm(f => ({ ...f, currency: e.target.value }))}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13 }}>
+              {['USD','EUR','GBP','NGN','GHS','KES','ZAR','CAD','AUD'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <Button variant="primary" onClick={saveRate} disabled={saving} style={{ height: 38, flexShrink: 0 }}>
+            {saving ? <><Spinner size={12} color="#fff" /> Saving…</> : saved ? '✓ Saved' : 'Set Rate'}
+          </Button>
+        </div>
+
+        {/* Current rates table */}
+        {rates.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Current Rates</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {rates.map(r => (
+                <div key={r.department} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{r.department}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 13, color: 'var(--emerald)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(r.hourly_rate_cents, r.currency)}/hr</span>
+                    <button onClick={() => deleteRate(r.department)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rose)', fontSize: 16, lineHeight: 1 }}>×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Date filter */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>FROM DATE</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ flex: '1 1 140px' }}>
+          <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>TO DATE</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+        </div>
+        <Button variant="secondary" onClick={loadPayroll} style={{ height: 38, flexShrink: 0 }}>Apply Filter</Button>
+      </div>
+
+      {/* Summary chips */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Total Payroll', value: fmt(totalPayroll, payroll[0]?.currency || 'USD'), color: 'var(--emerald)' },
+          { label: 'Total Hours', value: `${totalHours.toFixed(1)}h`, color: 'var(--primary)' },
+          { label: 'Outlier Tasks', value: totalTasks, color: 'var(--violet)' },
+          { label: 'Workers', value: payroll.length, color: 'var(--text3)' },
+        ].map(c => (
+          <div key={c.label} style={{ padding: '10px 18px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', textAlign: 'center', flex: '1 1 100px' }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: c.color, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{c.value}</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Worker payroll list */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[...Array(4)].map((_, i) => <Skeleton key={i} height={90} />)}
+        </div>
+      ) : payroll.length === 0 ? (
+        <EmptyState icon="💸" title="No payroll data" sub="Workers haven't completed any shifts yet." />
+      ) : payroll.map((w, i) => (
+        <div key={w.worker_id} style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 'var(--r-lg)', padding: '16px 18px', marginBottom: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar name={w.worker_name} size={36} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{w.worker_name}</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)' }}>{w.department || 'No department'}</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--emerald)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
+                {fmt(w.gross_pay_cents, w.currency)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                {w.hourly_rate_cents > 0 ? `${fmt(w.hourly_rate_cents, w.currency)}/hr` : 'No rate set'}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+            <span>Hours: <strong style={{ color: 'var(--primary)' }}>{w.total_hours}h</strong></span>
+            <span>Shifts: <strong style={{ color: 'var(--text)' }}>{w.shift_count}</strong></span>
+            <span>Check-ins: <strong style={{ color: 'var(--text)' }}>{w.check_in_count}</strong></span>
+            <span>Outlier Tasks: <strong style={{ color: 'var(--violet)' }}>{w.outlier_tasks_total}</strong></span>
+          </div>
+          {w.hourly_rate_cents === 0 && (
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>
+              ⚠ No hourly rate set for "{w.department}" — set one above to calculate pay.
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // ── Settings Panel ────────────────────────────────────────────────────────────
 function SettingsPanel() {
@@ -761,10 +962,11 @@ export default function AdminDashboard() {
       {drawer && <VerifyDrawer activity={drawer} onClose={() => setDrawer(null)} onVerify={handleVerify} />}
 
       {/* Settings & Attendance panels rendered as full-page overlays over main content */}
-      {(tab === 'settings' || tab === 'attendance') && (
+      {(tab === 'settings' || tab === 'attendance' || tab === 'payroll') && (
         <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 220, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
           {tab === 'settings' && <SettingsPanel />}
           {tab === 'attendance' && <AttendancePanel workers={workers} />}
+          {tab === 'payroll' && <PayrollPanel workers={workers} />}
         </div>
       )}
 

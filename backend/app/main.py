@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.database import engine, Base, SessionLocal
-from app.api.routes import auth, users, activities, shifts, analytics
+from app.api.routes import auth, users, activities, shifts, analytics, payroll
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +73,7 @@ app.include_router(users.router, prefix=PREFIX)
 app.include_router(shifts.router, prefix=PREFIX)
 app.include_router(activities.router, prefix=PREFIX)
 app.include_router(analytics.router, prefix=PREFIX)
+app.include_router(payroll.router, prefix=PREFIX)
 
 
 @app.get("/health")

@@ -100,6 +100,17 @@ class CheckIn(Base):
     worker = relationship("User", back_populates="check_ins")
 
 
+class DepartmentRate(Base):
+    """Hourly pay rate per department, set by admin."""
+    __tablename__ = "department_rates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    department = Column(String(100), unique=True, nullable=False, index=True)
+    hourly_rate = Column(Integer, nullable=False, default=0)  # stored in cents to avoid float issues
+    currency = Column(String(10), default="USD", nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
 class Activity(Base):
     __tablename__ = "activities"
 
