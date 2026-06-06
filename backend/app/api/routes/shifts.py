@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_SIZE_BYTES = 5 * 1024 * 1024  # 5MB
+MAX_TASKS_PER_CHECKIN = 500        # FIX: cap on outlier_tasks_completed
 
 
 def _today() -> date:
@@ -143,6 +144,9 @@ async def submit_checkin(
         raise HTTPException(403, f"Your shift is blocked: {shift.block_reason}")
     if outlier_tasks_completed < 0:
         raise HTTPException(400, "Task count cannot be negative")
+    # FIX: cap on outlier_tasks_completed to prevent inflation
+    if outlier_tasks_completed > MAX_TASKS_PER_CHECKIN:
+        raise HTTPException(400, f"Task count cannot exceed {MAX_TASKS_PER_CHECKIN} per check-in")
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(400, "Only JPEG, PNG, or WebP images are allowed")
 
@@ -151,7 +155,7 @@ async def submit_checkin(
         raise HTTPException(400, "Screenshot must be under 5MB")
 
     try:
-        seq = len(shift.check_ins) + 1  # human-readable sequence label; uniqueness guaranteed by timestamp in upload
+        seq = len(shift.check_ins) + 1
         url = cloudinary_upload(contents, user.id, shift.id, prefix=f"checkin_{seq}")
     except Exception as e:
         logger.error("Cloudinary check-in upload failed: %s", e)
@@ -165,6 +169,10 @@ async def submit_checkin(
         note=note,
     )
     db.add(checkin)
+    # If shift was blocked for missed check-in, unblock it now
+    if shift.is_blocked and shift.block_reason and "check-in" in shift.block_reason.lower():
+        shift.is_blocked = False
+        shift.block_reason = None
     db.commit()
     db.refresh(checkin)
     logger.info("Worker %s submitted check-in #%s with %s tasks", user.id, len(shift.check_ins), outlier_tasks_completed)
@@ -323,16 +331,47 @@ def admin_today_shifts(db: Session = Depends(get_db), admin=Depends(require_admi
     return [ShiftOutFull.model_validate(s) for s in shifts]
 
 
+# ── Admin: historical shifts (any date range) ─────────────────────────────────
+# FIX: new endpoint so admin can review past check-in screenshots
+
+@router.get("/admin/history", response_model=List[ShiftOutFull])
+def admin_shift_history(
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    worker_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
+    q = (
+        db.query(Shift)
+        .options(joinedload(Shift.worker), joinedload(Shift.check_ins))
+    )
+    if worker_id:
+        q = q.filter(Shift.worker_id == worker_id)
+    if date_from:
+        q = q.filter(Shift.date >= date_from)
+    if date_to:
+        q = q.filter(Shift.date <= date_to)
+    shifts = q.order_by(Shift.date.desc()).limit(200).all()
+    return [ShiftOutFull.model_validate(s) for s in shifts]
+
+
 # ── Admin: unblock a worker's shift ──────────────────────────────────────────
 
 @router.post("/{shift_id}/unblock", response_model=ShiftOut)
-def unblock_shift(shift_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def unblock_shift(
+    shift_id: int,
+    reason: Optional[str] = None,   # FIX: record why shift was unblocked
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin),
+):
     shift = db.query(Shift).filter(Shift.id == shift_id).first()
     if not shift:
         raise HTTPException(404, "Shift not found")
     shift.is_blocked = False
-    shift.block_reason = None
+    # FIX: persist unblock reason in block_reason field for audit trail
+    shift.block_reason = f"[UNBLOCKED by admin#{admin.id}" + (f": {reason}" if reason else "") + "]"
     db.commit()
     db.refresh(shift)
-    logger.info("Admin %s unblocked shift %s", admin.id, shift_id)
+    logger.info("Admin %s unblocked shift %s. Reason: %s", admin.id, shift_id, reason or "none given")
     return ShiftOut.model_validate(shift)

@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
-from app.models.models import Activity, User, UserRole, VerificationStatus
+from app.models.models import Activity, Shift, User, UserRole, VerificationStatus
 from app.schemas.schemas import ActivityCreate, ActivityUpdate, ActivityOut, VerifyActivityRequest
 from app.api.deps import get_current_user, require_admin
 
@@ -30,9 +30,23 @@ def _assert_editable(a: Activity):
 def create(payload: ActivityCreate, db=Depends(get_db), user=Depends(get_current_user)):
     if user.role != UserRole.worker:
         raise HTTPException(400, "Only workers can submit activities")
+
+    # FIX: validate end_time > start_time
+    if payload.end_time and payload.end_time <= payload.start_time:
+        raise HTTPException(400, "end_time must be after start_time")
+
+    # FIX: activity date must have a corresponding clocked-in shift for that worker
+    shift = db.query(Shift).filter(
+        Shift.worker_id == user.id,
+        Shift.date == payload.date,
+        Shift.clock_in.isnot(None),
+    ).first()
+    if not shift:
+        raise HTTPException(400, "You can only log activities for days you have clocked in")
+
     a = Activity(worker_id=user.id, **payload.model_dump())
     db.add(a); db.commit(); db.refresh(a)
-    logger.info("Worker %s created activity %s", user.id, a.id)
+    logger.info("Worker %s created activity %s on shift %s", user.id, a.id, shift.id)
     return _get(a.id, db)
 
 
@@ -81,6 +95,13 @@ def update(activity_id: int, payload: ActivityUpdate, db=Depends(get_db), user=D
     if user.role == UserRole.worker and a.worker_id != user.id:
         raise HTTPException(403, "Access denied")
     _assert_editable(a)
+
+    # FIX: validate end_time > start_time on update too
+    new_start = payload.start_time or a.start_time
+    new_end = payload.end_time if payload.end_time is not None else a.end_time
+    if new_end and new_end <= new_start:
+        raise HTTPException(400, "end_time must be after start_time")
+
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(a, k, v)
     a.updated_at = datetime.now(timezone.utc)

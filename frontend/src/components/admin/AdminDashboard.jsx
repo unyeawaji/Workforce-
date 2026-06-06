@@ -106,16 +106,7 @@ function VerifyDrawer({ activity, onClose, onVerify }) {
               <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>{activity.admin_feedback}</div>
             </div>
           )}
-          {activity.worker?.screenshot_url && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>📸 Work Screenshot</div>
-              <a href={activity.worker.screenshot_url} target="_blank" rel="noopener noreferrer">
-                <img src={activity.worker.screenshot_url} alt="Work screenshot"
-                  style={{ width: '100%', borderRadius: 'var(--r)', border: '1px solid var(--border)', cursor: 'zoom-in', maxHeight: 240, objectFit: 'cover' }} />
-              </a>
-              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>Click to view full size</div>
-            </div>
-          )}
+          {/* FIX: activities don't carry screenshots; screenshots come from check-ins on the shift */}
         </div>
 
         {/* Decision */}
@@ -790,21 +781,47 @@ function AttendancePanel({ workers }) {
   const [shifts, setShifts] = useState([])
   const [loading, setLoading] = useState(true)
   const [unblocking, setUnblocking] = useState(null)
+  // FIX: history support
+  const [viewMode, setViewMode] = useState('today') // 'today' | 'history'
+  const [histDateFrom, setHistDateFrom] = useState('')
+  const [histDateTo, setHistDateTo] = useState('')
+  const [histWorkerId, setHistWorkerId] = useState('all')
+  // FIX: unblock reason modal
+  const [unblockModal, setUnblockModal] = useState(null) // shiftId or null
+  const [unblockReason, setUnblockReason] = useState('')
+  // FIX: expanded check-in screenshots
+  const [expandedShift, setExpandedShift] = useState(null)
+  const [lightboxUrl, setLightboxUrl] = useState(null)
 
   const load = async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/shifts/admin/today')
-      setShifts(data)
+      if (viewMode === 'today') {
+        const { data } = await api.get('/shifts/admin/today')
+        setShifts(data)
+      } else {
+        const params = {}
+        if (histDateFrom) params.date_from = histDateFrom
+        if (histDateTo) params.date_to = histDateTo
+        if (histWorkerId !== 'all') params.worker_id = histWorkerId
+        const { data } = await api.get('/shifts/admin/history', { params })
+        setShifts(data)
+      }
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [viewMode])
 
-  const unblock = async (shiftId) => {
-    setUnblocking(shiftId)
+  const openUnblockModal = (shiftId) => { setUnblockModal(shiftId); setUnblockReason('') }
+
+  const confirmUnblock = async () => {
+    if (!unblockModal) return
+    setUnblocking(unblockModal)
     try {
-      await api.post(`/shifts/${shiftId}/unblock`)
+      await api.post(`/shifts/${unblockModal}/unblock`, null, {
+        params: unblockReason.trim() ? { reason: unblockReason.trim() } : {}
+      })
+      setUnblockModal(null)
       await load()
     } finally { setUnblocking(null) }
   }
@@ -813,13 +830,80 @@ function AttendancePanel({ workers }) {
 
   return (
     <div style={{ padding: '28px 24px' }}>
+      {/* FIX: Lightbox */}
+      {lightboxUrl && (
+        <>
+          <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 200, cursor: 'zoom-out', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src={lightboxUrl} alt="Screenshot" style={{ maxWidth: '95vw', maxHeight: '95vh', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-xl)' }} />
+          </div>
+        </>
+      )}
+
+      {/* FIX: Unblock reason modal */}
+      {unblockModal && (
+        <>
+          <div onClick={() => setUnblockModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 100 }} />
+          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'min(400px,90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', zIndex: 110, padding: 24 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>🔓 Unblock Shift</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.5 }}>
+              Provide a reason for unblocking this shift. This will be saved to the audit trail.
+            </div>
+            <textarea
+              value={unblockReason} onChange={e => setUnblockReason(e.target.value)}
+              placeholder="e.g. Worker had technical issues submitting check-in"
+              rows={3}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)', resize: 'vertical', boxSizing: 'border-box', marginBottom: 14 }}
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <Button variant="secondary" onClick={() => setUnblockModal(null)}>Cancel</Button>
+              <Button variant="danger" onClick={confirmUnblock} disabled={unblocking === unblockModal}>
+                {unblocking === unblockModal ? <Spinner size={12} color="var(--rose)" /> : 'Confirm Unblock'}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Today's Attendance</div>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Attendance</div>
           <div style={{ fontSize: 13, color: 'var(--text3)' }}>{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
         </div>
-        <Button variant="secondary" size="sm" onClick={load}>↻ Refresh</Button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* FIX: today / history toggle */}
+          <div style={{ display: 'flex', gap: 2, padding: 3, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+            {[['today','Today'],['history','History']].map(([v,l]) => (
+              <button key={v} onClick={() => setViewMode(v)} style={{ padding: '5px 12px', borderRadius: 'var(--r-sm)', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)', background: viewMode === v ? 'var(--surface)' : 'transparent', color: viewMode === v ? 'var(--text)' : 'var(--text3)', boxShadow: viewMode === v ? 'var(--shadow-sm)' : 'none', transition: 'all 0.15s' }}>{l}</button>
+            ))}
+          </div>
+          <Button variant="secondary" size="sm" onClick={load}>↻ Refresh</Button>
+        </div>
       </div>
+
+      {/* FIX: History filters */}
+      {viewMode === 'history' && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 130px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 5 }}>FROM</label>
+            <input type="date" value={histDateFrom} onChange={e => setHistDateFrom(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: '1 1 130px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 5 }}>TO</label>
+            <input type="date" value={histDateTo} onChange={e => setHistDateTo(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: '1 1 150px' }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 5 }}>WORKER</label>
+            <select value={histWorkerId} onChange={e => setHistWorkerId(e.target.value)}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13 }}>
+              <option value="all">All Workers</option>
+              {workers.map(w => <option key={w.id} value={String(w.id)}>{w.name}</option>)}
+            </select>
+          </div>
+          <Button variant="secondary" size="sm" onClick={load} style={{ height: 36, flexShrink: 0 }}>Search</Button>
+        </div>
+      )}
 
       {/* Summary chips */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -860,7 +944,7 @@ function AttendancePanel({ workers }) {
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {s.is_blocked && (
-                  <Button variant="danger" size="sm" onClick={() => unblock(s.id)} disabled={unblocking === s.id}>
+                  <Button variant="danger" size="sm" onClick={() => openUnblockModal(s.id)} disabled={unblocking === s.id}>
                     {unblocking === s.id ? <Spinner size={11} color="var(--rose)" /> : '🔓 Unblock'}
                   </Button>
                 )}
@@ -880,6 +964,52 @@ function AttendancePanel({ workers }) {
             {s.is_blocked && s.block_reason && (
               <div style={{ marginTop: 10, padding: '8px 12px', background: 'var(--rose-s)', borderRadius: 'var(--r)', fontSize: 12, color: 'var(--rose)', borderLeft: '3px solid var(--rose)' }}>
                 {s.block_reason}
+              </div>
+            )}
+
+            {/* FIX: check-in screenshots viewer */}
+            {s.check_ins?.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <button onClick={() => setExpandedShift(expandedShift === s.id ? null : s.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--primary)', fontFamily: 'var(--font-sans)', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d={expandedShift === s.id ? 'M18 15l-6-6-6 6' : 'M6 9l6 6 6-6'} />
+                  </svg>
+                  {expandedShift === s.id ? 'Hide' : 'View'} check-in screenshots ({s.check_ins.length})
+                </button>
+                {expandedShift === s.id && (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {s.check_ins.map((ci, idx) => (
+                      <div key={ci.id} style={{ background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)', padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                            Check-in #{idx + 1} · {new Date(ci.submitted_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <div style={{ display: 'flex', gap: 12, fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text3)' }}>
+                            <span>Tasks: <strong style={{ color: 'var(--emerald)' }}>{ci.outlier_tasks_completed}</strong></span>
+                            {ci.note && <span style={{ color: 'var(--text2)', fontStyle: 'italic' }}>"{ci.note}"</span>}
+                          </div>
+                        </div>
+                        <img
+                          src={ci.screenshot_url} alt={`Check-in ${idx + 1} screenshot`}
+                          onClick={() => setLightboxUrl(ci.screenshot_url)}
+                          style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', cursor: 'zoom-in' }}
+                        />
+                        <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>Click to view full size</div>
+                      </div>
+                    ))}
+                    {s.screenshot_url && (
+                      <div style={{ background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--violet-b)', padding: '10px 12px' }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--violet)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>📸 Final Clock-Out Screenshot</div>
+                        <img
+                          src={s.screenshot_url} alt="Clock-out screenshot"
+                          onClick={() => setLightboxUrl(s.screenshot_url)}
+                          style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 'var(--r-sm)', border: '1px solid var(--violet-b)', cursor: 'zoom-in' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

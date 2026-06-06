@@ -215,3 +215,51 @@ Workers cannot self-report duration.
 - [ ] Enable Railway's built-in DDoS protection
 - [ ] Set up Railway's automatic daily backups for PostgreSQL
 - [ ] Consider setting `ACCESS_TOKEN_EXPIRE_MINUTES=120` for tighter security
+
+---
+
+## Push Notifications Setup
+
+Workers receive a browser push notification ~5 minutes before each check-in is due,
+and an urgent one if they go overdue — even when the site tab is in the background.
+
+### 1. Generate VAPID keys (one time only)
+
+```bash
+# Option A — Python (pywebpush already in requirements)
+python -c "from pywebpush import generate_vapid_keys; generate_vapid_keys()"
+
+# Option B — Node
+npx web-push generate-vapid-keys
+```
+
+Both commands print a **Public Key** and **Private Key**.
+
+> ⚠️ Save these permanently. If you regenerate them, all existing browser
+> subscriptions break and workers must re-subscribe.
+
+### 2. Add to Railway environment variables
+
+| Variable | Value |
+|---|---|
+| `VAPID_PRIVATE_KEY` | The private key string from step 1 |
+| `VAPID_PUBLIC_KEY` | The public key string from step 1 |
+| `VAPID_MAILTO` | `mailto:admin@yourcompany.com` |
+
+### 3. How it works
+
+- On first visit (or after clock-in), the worker's browser asks permission
+- If granted, the browser registers a push subscription with the backend
+- The backend scheduler runs every 2 minutes checking all open shifts
+- Workers are notified 5 minutes before their check-in is due, and again if overdue
+- Notifications arrive even when the tab is minimised or the phone screen is off (Android)
+- **iOS Safari** does not support Web Push in the browser — workers on iPhone need to
+  add the site to their Home Screen first (PWA mode), then iOS 16.4+ supports it
+
+### 4. Notification behaviour
+
+| State | Notification |
+|---|---|
+| Check-in due in ≤ 5 min | 🔔 "Check-in due in 5 minutes" |
+| Check-in overdue | ⛔ "Check-in overdue — shift blocked" |
+| Worker clocks out | No more notifications until next clock-in |

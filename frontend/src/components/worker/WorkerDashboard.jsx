@@ -5,6 +5,7 @@ import { useActivities, useTodayShift, useToast, useShiftHistory } from '../../h
 import api, { shiftsApi, activitiesApi, profileApi } from '../../lib/api'
 import { fmtTime, fmtDate, getDuration, fmtMinutes, getErrorMessage } from '../../lib/utils'
 import { Avatar, Badge, Button, Card, Input, Textarea, Select, Spinner, Alert, EmptyState, Divider, ToastContainer } from '../ui'
+import { registerSW, requestAndSubscribe, unsubscribeAll, isPushSubscribed } from '../../lib/pushNotifications'
 
 // ── Live clock ────────────────────────────────────────────────────────────────
 function LiveClock() {
@@ -254,6 +255,40 @@ export default function WorkerDashboard() {
   const [pwSuccess, setPwSuccess] = useState(false)
   const { shifts: shiftHistory, loading: historyLoading } = useShiftHistory()
 
+  // ── Push notifications ────────────────────────────────────────────────────
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushLoading, setPushLoading] = useState(false)
+  const [pushBanner, setPushBanner] = useState(false) // show "enable notifications?" prompt
+
+  // Register service worker on mount
+  useEffect(() => {
+    registerSW()
+    isPushSubscribed().then(active => {
+      setPushEnabled(active)
+      // Show the enable-notifications banner if not yet subscribed
+      // (only if push is supported and permission not yet denied)
+      if (!active && 'Notification' in window && Notification.permission !== 'denied') {
+        setPushBanner(true)
+      }
+    })
+  }, [])
+
+  const handleEnablePush = async () => {
+    setPushLoading(true)
+    const ok = await requestAndSubscribe()
+    setPushEnabled(ok)
+    setPushBanner(false)
+    if (ok) toast('Push notifications enabled! We'll remind you when check-ins are due.')
+    else toast('Could not enable notifications. Check your browser settings.', 'error')
+    setPushLoading(false)
+  }
+
+  const handleDisablePush = async () => {
+    await unsubscribeAll()
+    setPushEnabled(false)
+    toast('Push notifications disabled')
+  }
+
   const reviewedCount = activities.filter(a => a.verification_status !== 'pending').length
 
   // ── Work window status & countdown ──────────────────────────────────────────
@@ -369,7 +404,18 @@ export default function WorkerDashboard() {
 
   const handleClockIn = async () => {
     setClockError('')
-    try { await clockIn(); toast('Clocked in successfully!') }
+    try {
+      await clockIn()
+      toast('Clocked in successfully!')
+      // Auto-subscribe to push if not already (silently — never block clock-in)
+      try {
+        const alreadySubbed = await isPushSubscribed()
+        if (!alreadySubbed && 'Notification' in window && Notification.permission === 'granted') {
+          const ok = await requestAndSubscribe()
+          if (ok) setPushEnabled(true)
+        }
+      } catch (_) { /* push failure must never prevent clock-in */ }
+    }
     catch (err) { setClockError(getErrorMessage(err)) }
   }
   const [screenshot, setScreenshot] = useState(null)
@@ -463,7 +509,7 @@ export default function WorkerDashboard() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </button>
         <Avatar name={user?.name} size={30} />
-        <button onClick={logout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }}>
+        <button onClick={async () => { await unsubscribeAll(); logout() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }} title="Logout">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
         </button>
       </div>
@@ -523,6 +569,47 @@ export default function WorkerDashboard() {
           )}
 
           {clockError && <Alert message={clockError} type="error" onClose={() => setClockError('')} style={{ marginBottom: 16 }} />}
+
+          {/* ── Push notification banner ──────────────────────────────── */}
+          {pushBanner && !shift?.clock_in && (
+            <div style={{
+              marginBottom: 16, padding: '14px 16px', borderRadius: 'var(--r-lg)',
+              background: 'var(--violet-s)', border: '1px solid var(--violet-b)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--violet)', marginBottom: 3 }}>
+                  🔔 Enable Check-in Reminders
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
+                  Get notified when it's time to submit your Outlier check-in — even when this tab is in the background.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button variant="secondary" size="sm" onClick={() => setPushBanner(false)}>Later</Button>
+                <Button variant="primary" size="sm" onClick={handleEnablePush} disabled={pushLoading}>
+                  {pushLoading ? <Spinner size={11} color="#fff" /> : 'Enable'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Push status indicator (small, unobtrusive, shown when clocked in) */}
+          {shift?.clock_in && !shift?.clock_out && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <button
+                onClick={pushEnabled ? handleDisablePush : handleEnablePush}
+                disabled={pushLoading}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: pushEnabled ? 'var(--emerald)' : 'var(--text3)', fontFamily: 'var(--font-mono)', padding: '4px 8px', borderRadius: 'var(--r-sm)' }}
+                title={pushEnabled ? 'Reminders on — click to disable' : 'Click to enable reminders'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                {pushEnabled ? 'Reminders on' : 'Reminders off'}
+              </button>
+            </div>
+          )}
 
           {activeTab === 'history' ? (
             <div>

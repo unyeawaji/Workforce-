@@ -72,9 +72,11 @@ def weekly(db: Session = Depends(get_db), admin=Depends(require_admin)):
             db.query(func.coalesce(func.sum(Shift.total_minutes), 0))
             .filter(Shift.date == d).scalar() or 0
         )
+        # FIX: count only approved activities so unverified self-reports don't inflate chart
         tasks = (
             db.query(func.count(Activity.id))
-            .filter(Activity.date == d).scalar() or 0
+            .filter(Activity.date == d, Activity.verification_status == VerificationStatus.approved)
+            .scalar() or 0
         )
         points.append(WeeklyPoint(
             day=d.strftime("%a"),
