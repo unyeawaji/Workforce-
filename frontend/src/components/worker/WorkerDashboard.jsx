@@ -977,30 +977,32 @@ export default function WorkerDashboard() {
               <button onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 20, lineHeight: 1, padding: 2 }}>✕</button>
             </div>
 
+            {/* Step-by-step guide */}
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Daily Steps</div>
             {[
               {
                 step: '1', icon: '🟢', title: 'Clock In',
-                body: 'Tap Clock In at the start of your shift. You must clock in within the allowed work window — clocking in late may flag or block your shift. A screenshot of your work screen is not required at this stage.',
+                body: 'Tap Clock In at the start of your shift. You must clock in within the allowed work window set by your admin. If you clock in after the deadline but within the grace period, your shift will be flagged as late. If you clock in after the grace period ends, your shift will be blocked immediately and you will not be able to proceed until an admin unblocks you.',
               },
               {
                 step: '2', icon: '📸', title: 'Submit Periodic Check-ins',
-                body: 'Every set interval (e.g. every 2 hours) you will be prompted to submit a check-in. Take a screenshot of your Outlier dashboard, enter the number of tasks you completed, and submit. Missing a check-in will block your shift — you won\'t be able to clock out until it\'s resolved.',
+                body: 'While you are clocked in, the system requires you to submit a check-in at regular intervals (e.g. every 2 hours). Each check-in proves you are actively working on the Outlier platform. You must: (1) take a screenshot of your Outlier dashboard showing your account, (2) enter the number of tasks you completed since the last check-in, and (3) optionally add a note. You will receive a push notification when a check-in is due — tap it to open the app and submit. If you miss a check-in window, your shift will be automatically blocked and you will not be able to upload your final screenshot or clock out until you submit the overdue check-in.',
               },
               {
                 step: '3', icon: '📋', title: 'Log Your Activities',
-                body: 'Use the Today tab to log each task you worked on — add a title, description, and start/end time. Activities are reviewed by your admin and marked approved or rejected. You can only log activities on days you have clocked in.',
+                body: 'Use the Today tab to log each task you worked on during your shift. For each activity, provide a title, a description of what you did, and the start and end time. Activities are reviewed by your admin and marked as approved or rejected. Approved activities contribute to your work record. You can only log activities on days when you have an active shift.',
               },
               {
                 step: '4', icon: '🖼️', title: 'Upload a Final Screenshot',
-                body: 'Before clocking out, upload a final screenshot of your Outlier dashboard. This is required — you cannot clock out without it.',
+                body: 'Before clocking out, you must upload a final screenshot of your Outlier dashboard. This serves as your end-of-shift proof of work and is separate from your periodic check-in screenshots. The upload card is visible throughout your entire shift — you do not need to wait until the last minute. You cannot clock out without uploading this screenshot.',
               },
               {
                 step: '5', icon: '🔴', title: 'Clock Out',
-                body: 'Tap Clock Out to end your shift. Make sure your final screenshot is uploaded and all check-ins are submitted first. Your total hours will be recorded automatically.',
+                body: 'Tap Clock Out to end your shift. Before clocking out, ensure your final screenshot is uploaded and all pending check-ins are submitted. Once you clock out, your total hours are recorded automatically. You cannot clock out if your shift is blocked.',
               },
               {
                 step: '💡', icon: '🔔', title: 'Enable Push Notifications',
-                body: 'Allow notifications so the system can remind you when a check-in is due — even if you close this tab. You\'ll be prompted at clock-in, or you can enable it from the bell icon in the Today tab.',
+                body: 'Push notifications are essential — they alert you when a check-in is due even if the app is in the background or the tab is closed. You will be prompted to enable them when you clock in. You can also enable them from the bell icon in the Today tab. Without notifications, you risk missing a check-in and getting your shift blocked.',
               },
             ].map(({ step, icon, title, body }) => (
               <div key={step} style={{ display: 'flex', gap: 14, marginBottom: 18 }}>
@@ -1012,7 +1014,7 @@ export default function WorkerDashboard() {
                 }}>{step}</div>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{icon} {title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.7 }}>{body}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.8 }}>{body}</div>
                 </div>
               </div>
             ))}
@@ -1020,6 +1022,52 @@ export default function WorkerDashboard() {
             <div style={{ marginTop: 8, padding: '12px 14px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', fontSize: 12, color: 'var(--text3)', lineHeight: 1.7 }}>
               ⚠️ <strong style={{ color: 'var(--text)' }}>Important:</strong> If your shift is blocked, contact your admin. You can reach this guide anytime via the <strong style={{ color: 'var(--text)' }}>?</strong> button in the top bar.
             </div>
+
+            {/* FAQ */}
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)', margin: '24px 0 14px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Frequently Asked Questions</div>
+            {[
+              {
+                q: 'What happens if I miss a check-in?',
+                a: 'Your shift will be automatically blocked. A red banner will appear at the bottom of your screen with a "Submit Check-In Now" button. You must submit the overdue check-in immediately to unblock your shift. Until you do, you cannot upload your final screenshot or clock out. If you are unable to submit for any reason, contact your admin.',
+              },
+              {
+                q: 'Why is my shift blocked even though I just clocked in?',
+                a: 'If you clocked in after the grace period deadline, your shift is blocked for lateness. This is enforced automatically by the system. You will need to contact your admin to have your shift manually unblocked — you cannot remove a lateness block yourself.',
+              },
+              {
+                q: 'What should my check-in screenshot show?',
+                a: 'It must clearly show your Outlier dashboard with your account details visible. The screenshot proves you were actively on the platform at that point in time. Blurry, cropped, or irrelevant screenshots may be flagged or rejected by your admin.',
+              },
+              {
+                q: 'Can I upload my final screenshot early?',
+                a: 'Yes. The final screenshot upload card appears as soon as you clock in and stays visible throughout your shift. You can upload it at any time — you do not need to wait until the end. You still cannot clock out until it is uploaded.',
+              },
+              {
+                q: 'What is the difference between a check-in screenshot and the final screenshot?',
+                a: 'Check-in screenshots are submitted periodically throughout your shift (e.g. every 2 hours) via the check-in modal. They record your activity at regular intervals and include a task count. The final screenshot is a single upload done before you clock out — it is your end-of-shift summary proof. Both are required and serve different purposes.',
+              },
+              {
+                q: 'I submitted a check-in but my shift is still blocked. What do I do?',
+                a: 'The block should lift automatically once a valid check-in is submitted. Try refreshing the page. If the block persists after refreshing, contact your admin — they can manually unblock your shift from the admin dashboard.',
+              },
+              {
+                q: 'Will I lose my progress if I close the app during a shift?',
+                a: 'No. Your shift, check-ins, and uploaded screenshots are all saved to the server in real time. When you reopen the app, everything will be restored exactly as you left it. Make sure push notifications are enabled so you do not miss a check-in reminder while the app is closed.',
+              },
+              {
+                q: 'What counts as a task in the check-in form?',
+                a: 'A task is any unit of work you completed on the Outlier platform since your last check-in. Enter an honest count — your admin can cross-reference this against your Outlier dashboard screenshot.',
+              },
+              {
+                q: 'What happens to my check-in data?',
+                a: 'All check-in screenshots, task counts, and notes are stored and visible to your admin. They are used to verify your activity, calculate your productivity, and process your payroll. Your data is not shared outside of your organisation.',
+              },
+            ].map(({ q, a }, i) => (
+              <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < 8 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', marginBottom: 6, lineHeight: 1.5 }}>Q: {q}</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.8 }}>A: {a}</div>
+              </div>
+            ))}
 
             <Button variant="primary" fullWidth onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ marginTop: 20 }}>
               Got it, let's go
