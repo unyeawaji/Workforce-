@@ -57,6 +57,7 @@ def run_migrations():
     from sqlalchemy import text
     migrations = [
         # Shift table additions
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500)",
         "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS client_name VARCHAR(200)",
         "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS is_late BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE",
