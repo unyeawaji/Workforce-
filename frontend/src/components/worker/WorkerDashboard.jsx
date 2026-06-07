@@ -22,8 +22,10 @@ function LiveClock() {
 }
 
 // ── Time-based greeting ───────────────────────────────────────────────────────
-function getGreeting() {
-  const hour = new Date().getHours()
+// Accepts a Date so the greeting stays in sync with the live clock tick rather
+// than freezing at the value it had when the component first mounted.
+function getGreeting(date = new Date()) {
+  const hour = date.getHours()
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   if (hour < 21) return 'Good evening'
@@ -248,6 +250,12 @@ export default function WorkerDashboard() {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { dark, toggle: toggleTheme } = useThemeStore()
+  // Live clock for reactive greeting — ticks every minute (no need for per-second here)
+  const [greetingNow, setGreetingNow] = useState(new Date())
+  useEffect(() => {
+    const t = setInterval(() => setGreetingNow(new Date()), 60000)
+    return () => clearInterval(t)
+  }, [])
   const { shift, loading: shiftLoading, clockIn, clockOut } = useTodayShift()
   const { activities, loading: actLoading, create, update, remove } = useActivities()
   const { toasts, toast, removeToast } = useToast()
@@ -548,7 +556,7 @@ export default function WorkerDashboard() {
 
           {/* Greeting */}
           <div className="anim-fade-up" style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: 0.5, marginBottom: 2 }}>{getGreeting()}</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', letterSpacing: 0.5, marginBottom: 2 }}>{getGreeting(greetingNow)}</div>
             <div style={{ fontSize: 24, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{user?.name?.split(' ')[0]}</div>
           </div>
 
