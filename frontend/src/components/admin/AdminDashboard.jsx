@@ -1035,7 +1035,20 @@ function AttendancePanel({ workers }) {
               </div>
             )}
 
-            {/* FIX: check-in screenshots viewer */}
+            {/* Final shift screenshot — always visible when present, independent of check-ins */}
+            {s.screenshot_url && (
+              <div style={{ marginTop: 10, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--violet-b)', padding: '10px 12px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--violet)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>📸 Final Screenshot</div>
+                <img
+                  src={s.screenshot_url} alt="Final screenshot"
+                  onClick={() => setLightboxUrl(s.screenshot_url)}
+                  style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 'var(--r-sm)', border: '1px solid var(--violet-b)', cursor: 'zoom-in' }}
+                />
+                <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>Click to view full size</div>
+              </div>
+            )}
+
+            {/* Check-in screenshots viewer */}
             {s.check_ins?.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <button onClick={() => setExpandedShift(expandedShift === s.id ? null : s.id)}
@@ -1066,16 +1079,6 @@ function AttendancePanel({ workers }) {
                         <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>Click to view full size</div>
                       </div>
                     ))}
-                    {s.screenshot_url && (
-                      <div style={{ background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--violet-b)', padding: '10px 12px' }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--violet)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>📸 Final Clock-Out Screenshot</div>
-                        <img
-                          src={s.screenshot_url} alt="Clock-out screenshot"
-                          onClick={() => setLightboxUrl(s.screenshot_url)}
-                          style={{ width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: 'var(--r-sm)', border: '1px solid var(--violet-b)', cursor: 'zoom-in' }}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
