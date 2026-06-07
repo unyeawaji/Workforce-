@@ -256,6 +256,7 @@ export default function WorkerDashboard() {
   const [editItem, setEditItem] = useState(null)
   const [filter, setFilter] = useState('all')
   const [clockError, setClockError] = useState('')
+  const [clientName, setClientName] = useState('')
   const [activeTab, setActiveTab] = useState('today')
   const [showPwModal, setShowPwModal] = useState(false)
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
@@ -415,8 +416,9 @@ export default function WorkerDashboard() {
 
   const handleClockIn = async () => {
     setClockError('')
+    if (!clientName.trim()) { setClockError('Please enter the client name before clocking in'); return }
     try {
-      await clockIn()
+      await clockIn(clientName.trim())
       toast('Clocked in successfully!')
       // Auto-subscribe to push if not already (silently — never block clock-in)
       try {
@@ -437,6 +439,12 @@ export default function WorkerDashboard() {
   const [screenshot, setScreenshot] = useState(null)
   const [screenshotUploading, setScreenshotUploading] = useState(false)
   const [screenshotUploaded, setScreenshotUploaded] = useState(false)
+
+  // BUG FIX: seed screenshotUploaded from server state so a page refresh after
+  // uploading doesn't show "upload required" again and doesn't confuse the worker.
+  useEffect(() => {
+    if (shift?.screenshot_url) setScreenshotUploaded(true)
+  }, [shift?.screenshot_url])
 
   const handleScreenshotChange = (e) => {
     const file = e.target.files[0]
@@ -695,6 +703,31 @@ export default function WorkerDashboard() {
             </div>
           ) : (
             <>
+          {/* Client name input — required before clocking in */}
+          {!shift?.clock_in && (
+            <Card style={{ marginBottom: 16, padding: '14px 16px' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>👤 Who are you working for today?</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Enter the client name before clocking in.</div>
+              <input
+                type="text"
+                placeholder="e.g. Outlier AI, Client ABC…"
+                value={clientName}
+                onChange={e => setClientName(e.target.value)}
+                style={{
+                  width: '100%', padding: '9px 12px', borderRadius: 'var(--r)',
+                  border: '1.5px solid var(--border)', background: 'var(--surface2)',
+                  color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)',
+                  boxSizing: 'border-box',
+                }}
+              />
+            </Card>
+          )}
+          {/* Show current client while clocked in */}
+          {shift?.clock_in && shift?.client_name && (
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10, fontFamily: 'var(--font-mono)' }}>
+              Working for: <strong style={{ color: 'var(--primary)' }}>{shift.client_name}</strong>
+            </div>
+          )}
           <ClockHero shift={shift} onClockIn={handleClockIn} onClockOut={handleClockOut} loading={shiftLoading} />
 
           {/* Screenshot upload — shown when clocked in and not yet clocked out */}

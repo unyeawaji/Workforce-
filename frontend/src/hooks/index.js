@@ -93,8 +93,8 @@ export function useTodayShift() {
 
   useEffect(() => { load() }, [])
 
-  const clockIn = async () => {
-    const { data } = await shiftsApi.clockIn()
+  const clockIn = async (clientName) => {
+    const { data } = await shiftsApi.clockIn(clientName)
     setShift(data)
     return data
   }

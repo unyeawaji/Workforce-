@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, date, timezone, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
@@ -60,7 +60,10 @@ def _next_checkin_due(shift: Shift, schedule: WorkSchedule) -> Optional[datetime
     """Return when the next check-in is due, or None if not yet needed."""
     if not shift.clock_in:
         return None
-    last = shift.check_ins[-1].submitted_at if shift.check_ins else shift.clock_in
+    # BUG FIX: sort before indexing — ORM relationship has no guaranteed order_by.
+    # The scheduler already does this; apply the same guard here.
+    sorted_checkins = sorted(shift.check_ins, key=lambda c: c.submitted_at)
+    last = sorted_checkins[-1].submitted_at if sorted_checkins else shift.clock_in
     return last + timedelta(minutes=schedule.checkin_interval_minutes)
 
 
@@ -92,7 +95,7 @@ def update_schedule(payload: WorkScheduleUpdate, db: Session = Depends(get_db), 
 # ── Clock In ──────────────────────────────────────────────────────────────────
 
 @router.post("/clock-in", response_model=ShiftOut)
-def clock_in(db: Session = Depends(get_db), user=Depends(get_current_user)):
+def clock_in(client_name: Optional[str] = None, db: Session = Depends(get_db), user=Depends(get_current_user)):
     t = _today()
     shift = db.query(Shift).filter(Shift.worker_id == user.id, Shift.date == t).first()
     if shift and shift.clock_in:
@@ -108,6 +111,8 @@ def clock_in(db: Session = Depends(get_db), user=Depends(get_current_user)):
         raise HTTPException(403, window.message)
 
     shift.clock_in = now
+    if client_name:
+        shift.client_name = client_name.strip()
     schedule = _get_schedule(db)
     _check_punctuality(shift, schedule, now)
     db.commit()

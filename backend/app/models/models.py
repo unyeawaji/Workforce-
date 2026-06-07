@@ -95,6 +95,8 @@ class Shift(Base):
     total_minutes = Column(Integer, nullable=True)
     screenshot_url = Column(String(500), nullable=True)
 
+    client_name = Column(String(200), nullable=True)   # which client the worker is working for
+
     is_late = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
     block_reason = Column(String(255), nullable=True)
@@ -168,3 +170,32 @@ class PushSubscription(Base):
     created_at = Column(DateTime(timezone=True), default=_now)
 
     worker = relationship("User", back_populates="push_subscriptions")
+
+
+class PushNotificationLog(Base):
+    """
+    Tracks which (shift, window_key) pairs have already been notified.
+    Persisting this in the DB means process restarts / Railway redeploys
+    do not cause duplicate push notifications within the same check-in window.
+    Rows older than 24h are pruned automatically by the scheduler.
+    """
+    __tablename__ = "push_notification_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shift_id = Column(Integer, ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False, index=True)
+    window_key = Column(String(32), nullable=False, index=True)   # "{shift_id}:{YYYYmmddTHHMM}"
+    notified_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+
+class UsedExportToken(Base):
+    """
+    BUG FIX: tracks consumed export JWTs so each token is truly single-use.
+    jti is a UUID stored at token creation; verify_export_token checks this table
+    and rejects any token whose jti already appears here.
+    Rows are pruned on a schedule (anything older than 5 minutes is safe to drop).
+    """
+    __tablename__ = "used_export_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    jti = Column(String(64), unique=True, nullable=False, index=True)
+    used_at = Column(DateTime(timezone=True), default=_now, nullable=False)

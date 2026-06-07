@@ -87,14 +87,16 @@ def weekly(db: Session = Depends(get_db), admin=Depends(require_admin)):
 
 
 @router.get("/export-token")
-def get_export_token(admin=Depends(require_admin)):
+def get_export_token(db: Session = Depends(get_db), admin=Depends(require_admin)):
     """
     Issue a short-lived (60s) single-use export token.
     The frontend calls this first via fetch (with Authorization header),
     then uses the returned token in window.open() to trigger the download.
     This avoids passing the long-lived JWT in a URL query param.
     """
-    token = create_export_token(str(admin.id))
+    # BUG FIX: create_export_token now returns (token, jti) — jti is embedded in
+    # the JWT and must be consumed by the export endpoint to enforce single-use.
+    token, _jti = create_export_token(str(admin.id))
     return {"export_token": token}
 
 
@@ -112,9 +114,24 @@ def export(
     # Validate the short-lived export token (not the long-lived JWT)
     if not export_token:
         raise HTTPException(status_code=401, detail="export_token is required")
-    user_id = verify_export_token(export_token)
-    if not user_id:
+    result = verify_export_token(export_token)
+    if not result:
         raise HTTPException(status_code=401, detail="Invalid or expired export token")
+    user_id, jti = result
+
+    # BUG FIX: enforce single-use — reject tokens whose jti was already consumed.
+    from app.models.models import UsedExportToken
+    from datetime import timedelta
+    if db.query(UsedExportToken).filter(UsedExportToken.jti == jti).first():
+        raise HTTPException(status_code=401, detail="Export token already used")
+    # Mark the token as consumed before doing any work
+    db.add(UsedExportToken(jti=jti))
+    db.commit()
+    # Prune stale entries (older than 5 min) — tokens expire in 60s so this is generous
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db.query(UsedExportToken).filter(UsedExportToken.used_at < cutoff).delete(synchronize_session=False)
+    db.commit()
+
     user = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
     if not user or user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -126,8 +143,10 @@ def export(
             Activity.verification_status, Activity.admin_feedback, Activity.verified_at,
             User.name.label("worker_name"), User.email.label("worker_email"),
             User.department,
+            Shift.client_name,
         )
         .join(User, User.id == Activity.worker_id)
+        .join(Shift, (Shift.worker_id == Activity.worker_id) & (Shift.date == Activity.date), isouter=True)
     )
     if worker_id:
         q = q.filter(Activity.worker_id == worker_id)
@@ -142,7 +161,7 @@ def export(
     df = pd.DataFrame(rows, columns=[
         "ID", "Date", "Task", "Description", "Start", "End",
         "Status", "Verification", "Admin Feedback", "Verified At",
-        "Worker Name", "Worker Email", "Department",
+        "Worker Name", "Worker Email", "Department", "Client",
     ])
 
     if fmt == "xlsx":

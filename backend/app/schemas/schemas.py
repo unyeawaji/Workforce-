@@ -181,6 +181,7 @@ class ShiftOutFull(BaseModel):
     clock_out: Optional[datetime]
     total_minutes: Optional[int]
     screenshot_url: Optional[str] = None
+    client_name: Optional[str] = None
     is_late: bool = False
     is_blocked: bool = False
     block_reason: Optional[str] = None

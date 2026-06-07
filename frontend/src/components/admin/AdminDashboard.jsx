@@ -342,6 +342,67 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
 
 // ── Admin dashboard ───────────────────────────────────────────────────────────
 
+
+// ── Client Breakdown (payroll view) ──────────────────────────────────────────
+function ClientBreakdown({ dateFrom, dateTo, fmt, rates }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      try {
+        const params = {}
+        if (dateFrom) params.date_from = dateFrom
+        if (dateTo) params.date_to = dateTo
+        const { data } = await api.get('/shifts/', { params })
+        // Group by client_name
+        const map = {}
+        for (const s of data) {
+          const client = s.client_name || '(No client entered)'
+          if (!map[client]) map[client] = { client, shifts: 0, total_minutes: 0, workers: new Set() }
+          map[client].shifts++
+          map[client].total_minutes += s.total_minutes || 0
+          map[client].workers.add(s.worker_id)
+        }
+        setRows(Object.values(map).map(r => ({ ...r, workers: r.workers.size })).sort((a, b) => b.total_minutes - a.total_minutes))
+      } finally { setLoading(false) }
+    }
+    load()
+  }, [dateFrom, dateTo])
+
+  if (loading) return <Skeleton height={100} style={{ marginTop: 24 }} />
+  if (!rows.length) return null
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>📊 Client Breakdown</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>Hours worked per client across all workers in the selected period.</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map(r => (
+          <div key={r.client} style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 'var(--r-lg)', padding: '12px 16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10,
+          }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.client}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                {r.workers} worker{r.workers !== 1 ? 's' : ''} · {r.shifts} shift{r.shifts !== 1 ? 's' : ''}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>
+                {Math.floor(r.total_minutes / 60)}h {r.total_minutes % 60}m
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Payroll Panel ────────────────────────────────────────────────────────────
 function PayrollPanel({ workers }) {
   const [rates, setRates] = useState([])
@@ -390,7 +451,7 @@ function PayrollPanel({ workers }) {
       })
       await loadRates()
       setSaved(true)
-      setRateForm({ department: '', amount: '', currency: 'USD' })
+      setRateForm(f => ({ department: '', amount: '', currency: f.currency }))
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
       setError(e.response?.data?.detail || 'Failed to save rate')
@@ -484,7 +545,7 @@ function PayrollPanel({ workers }) {
       {/* Summary chips */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total Payroll', value: fmt(totalPayroll, payroll[0]?.currency || 'USD'), color: 'var(--emerald)' },
+          { label: 'Total Payroll', value: fmt(totalPayroll, payroll[0]?.currency || rates[0]?.currency || 'USD'), color: 'var(--emerald)' },
           { label: 'Total Hours', value: `${totalHours.toFixed(1)}h`, color: 'var(--primary)' },
           { label: 'Outlier Tasks', value: totalTasks, color: 'var(--violet)' },
           { label: 'Workers', value: payroll.length, color: 'var(--text3)' },
@@ -538,6 +599,9 @@ function PayrollPanel({ workers }) {
           )}
         </div>
       ))}
+
+      {/* ── Client Breakdown ─────────────────────────────────────────── */}
+      {payroll.length > 0 && <ClientBreakdown dateFrom={dateFrom} dateTo={dateTo} fmt={fmt} rates={rates} />}
     </div>
   )
 }
@@ -941,6 +1005,7 @@ function AttendancePanel({ workers }) {
                 <Avatar name={worker?.name || 'Worker'} size={36} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{worker?.name || `Worker #${s.worker_id}`}</div>
+                  {s.client_name && <div style={{ fontSize: 11, color: 'var(--primary)', fontFamily: 'var(--font-mono)', marginTop: 1 }}>Client: {s.client_name}</div>}
                   <div style={{ fontSize: 11, color: 'var(--text3)' }}>{worker?.department || ''}</div>
                 </div>
               </div>
@@ -1183,10 +1248,10 @@ export default function AdminDashboard() {
                   No activity data yet — charts will populate once workers start logging tasks.
                 </div>
               )}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16, marginBottom: 28 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16, marginBottom: 28 }}>
                 <Card className="anim-fade-up" style={{ animationDelay: '300ms' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Hours Logged — Last 7 Days</div>
-                  <ResponsiveContainer width="100%" height={180}>
+                  <div style={{ overflowX: 'auto' }}><ResponsiveContainer width="100%" height={180} minWidth={280}>
                     <AreaChart data={weekly}>
                       <defs>
                         <linearGradient id="aHours" x1="0" y1="0" x2="0" y2="1">
@@ -1195,25 +1260,25 @@ export default function AdminDashboard() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
-                      <XAxis dataKey="day" interval={0} tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
+                      <XAxis dataKey="day" interval={0} minTickGap={0} tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
                       <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', fontSize: 12 }} cursor={{ stroke: 'var(--border)' }}/>
                       <Area type="monotone" dataKey="hours" stroke="var(--primary)" strokeWidth={2} fill="url(#aHours)" dot={false}/>
                     </AreaChart>
-                  </ResponsiveContainer>
+                  </ResponsiveContainer></div>
                 </Card>
 
                 <Card className="anim-fade-up" style={{ animationDelay: '380ms' }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Tasks Submitted — Last 7 Days</div>
-                  <ResponsiveContainer width="100%" height={180}>
+                  <div style={{ overflowX: 'auto' }}><ResponsiveContainer width="100%" height={180} minWidth={280}>
                     <BarChart data={weekly} barSize={16}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
-                      <XAxis dataKey="day" interval={0} tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
+                      <XAxis dataKey="day" interval={0} minTickGap={0} tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
                       <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', fontSize: 12 }} cursor={{ fill: 'var(--surface2)' }}/>
                       <Bar dataKey="tasks" fill="var(--emerald)" radius={[4,4,0,0]}/>
                     </BarChart>
-                  </ResponsiveContainer>
+                  </ResponsiveContainer></div>
                 </Card>
               </div>
 

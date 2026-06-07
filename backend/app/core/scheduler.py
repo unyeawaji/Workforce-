@@ -5,6 +5,11 @@ Jobs:
   checkin_reminder  — every 2 minutes: finds all workers currently on shift
                       whose check-in is overdue or due within 5 minutes,
                       and sends them a Web Push notification.
+
+Throttle durability note:
+  The _notified set is backed by the DB (PushNotificationLog) so that
+  redeploys / process restarts do not cause duplicate notifications within
+  the same check-in due window.
 """
 import logging
 from datetime import datetime, timezone, timedelta
@@ -12,17 +17,38 @@ from typing import Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logger = logging.getLogger(__name__)
-_scheduler: Optional[AsyncIOScheduler] = None  # FIX: Optional syntax for Python 3.9 compat
-
-
-# In-memory set of (shift_id, window_key) already notified this cycle
-# Prevents spamming workers every 2 min once check-in becomes due
-_notified: set = set()
+_scheduler: Optional[AsyncIOScheduler] = None  # Optional syntax for Python 3.9 compat
 
 
 def _window_key(shift_id: int, next_due: datetime) -> str:
     """Unique key for one check-in due window — resets once worker submits."""
     return f"{shift_id}:{next_due.strftime('%Y%m%dT%H%M')}"
+
+
+def _already_notified(db, shift_id: int, window_key: str) -> bool:
+    """Check DB log to see if this window was already notified."""
+    from app.models.models import PushNotificationLog
+    return db.query(PushNotificationLog).filter(
+        PushNotificationLog.shift_id == shift_id,
+        PushNotificationLog.window_key == window_key,
+    ).first() is not None
+
+
+def _mark_notified(db, shift_id: int, window_key: str) -> None:
+    """Persist notification record so restarts don't re-notify."""
+    from app.models.models import PushNotificationLog
+    db.add(PushNotificationLog(shift_id=shift_id, window_key=window_key))
+    db.commit()
+
+
+def _cleanup_old_logs(db) -> None:
+    """Prune log rows older than 24h to keep the table small."""
+    from app.models.models import PushNotificationLog
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    db.query(PushNotificationLog).filter(
+        PushNotificationLog.notified_at < cutoff
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
 def _run_reminder():
@@ -37,11 +63,14 @@ def _run_reminder():
         now = datetime.now(timezone.utc)
         today = now.date()
 
+        # Prune old log rows once per run
+        _cleanup_old_logs(db)
+
         # Get the check-in interval setting
         schedule = db.query(WorkSchedule).filter(WorkSchedule.id == 1).first()
         interval_minutes = schedule.checkin_interval_minutes if schedule else 120
 
-        # All open shifts today (clocked in, not clocked out, not already blocked for unrelated reason)
+        # All open shifts today (clocked in, not clocked out)
         open_shifts = (
             db.query(Shift)
             .options(joinedload(Shift.check_ins), joinedload(Shift.worker))
@@ -54,7 +83,7 @@ def _run_reminder():
         )
 
         for shift in open_shifts:
-            # FIX: sort check_ins by submitted_at so [-1] is genuinely the latest
+            # Sort check_ins by submitted_at so [-1] is genuinely the latest
             sorted_checkins = sorted(shift.check_ins, key=lambda c: c.submitted_at)
             last_event = (
                 sorted_checkins[-1].submitted_at
@@ -68,15 +97,13 @@ def _run_reminder():
             should_notify = minutes_until_due <= 5
 
             if not should_notify:
-                # Clear any stale throttle keys for this shift so next window works
-                _notified.discard(_window_key(shift.id, next_due))
                 continue
 
-            # FIX: throttle — only send one notification per due window
+            # Throttle — only send one notification per due window, survive restarts
             wk = _window_key(shift.id, next_due)
-            if wk in _notified:
+            if _already_notified(db, shift.id, wk):
                 continue
-            _notified.add(wk)
+            _mark_notified(db, shift.id, wk)
 
             overdue = minutes_until_due < 0
             if overdue:
@@ -88,8 +115,8 @@ def _run_reminder():
             else:
                 title = "🔔 Check-in due in 5 minutes"
                 body = (
-                    f"Time to submit your Outlier check-in. "
-                    f"Take a screenshot of your dashboard and report your task count."
+                    "Time to submit your Outlier check-in. "
+                    "Take a screenshot of your dashboard and report your task count."
                 )
 
             # Get all push subscriptions for this worker

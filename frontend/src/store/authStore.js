@@ -2,43 +2,50 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '../lib/api'
 
+// Single source of truth for the token: Zustand persist (localStorage key 'wft-auth').
+// api.js reads from this same store via getToken() so there is no duplicate storage.
+let _getToken = () => null
+
+export const getToken = () => _getToken()
+
 export const useAuthStore = create(
   persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      loading: false,
+    (set, get) => {
+      // Wire up the module-level accessor after store creation
+      _getToken = () => get().token
 
-      login: async (email, password) => {
-        set({ loading: true })
-        try {
-          const { data } = await authApi.login(email, password)
-          localStorage.setItem('wft_token', data.access_token)
-          set({ user: data.user, token: data.access_token, loading: false })
-          return data.user
-        } catch (err) {
-          set({ loading: false })
-          throw err
-        }
-      },
+      return {
+        user: null,
+        token: null,
+        loading: false,
 
-      logout: () => {
-        localStorage.removeItem('wft_token')
-        set({ user: null, token: null })
-      },
+        login: async (email, password) => {
+          set({ loading: true })
+          try {
+            const { data } = await authApi.login(email, password)
+            set({ user: data.user, token: data.access_token, loading: false })
+            return data.user
+          } catch (err) {
+            set({ loading: false })
+            throw err
+          }
+        },
 
-      fetchMe: async () => {
-        const token = localStorage.getItem('wft_token')
-        if (!token) return
-        try {
-          const { data } = await authApi.me()
-          set({ user: data })
-        } catch {
-          localStorage.removeItem('wft_token')
+        logout: () => {
           set({ user: null, token: null })
-        }
-      },
-    }),
+        },
+
+        fetchMe: async () => {
+          if (!get().token) return
+          try {
+            const { data } = await authApi.me()
+            set({ user: data })
+          } catch {
+            set({ user: null, token: null })
+          }
+        },
+      }
+    },
     {
       name: 'wft-auth',
       partialize: (s) => ({ token: s.token, user: s.user }),

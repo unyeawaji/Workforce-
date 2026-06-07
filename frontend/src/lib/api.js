@@ -1,13 +1,14 @@
 import axios from 'axios'
+import { getToken } from '../store/authStore'
 
 const api = axios.create({
   baseURL: (import.meta.env.VITE_API_URL || '') + '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT on every request
+// Attach JWT on every request — reads from Zustand persist (single source of truth)
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('wft_token')
+  const token = getToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -17,7 +18,10 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('wft_token')
+      // Import dynamically to avoid circular dependency at module load time
+      import('../store/authStore').then(({ useAuthStore }) => {
+        useAuthStore.getState().logout()
+      })
       window.location.href = '/login'
     }
     return Promise.reject(err)
@@ -40,7 +44,7 @@ export const usersApi = {
 }
 
 export const shiftsApi = {
-  clockIn: () => api.post('/shifts/clock-in'),
+  clockIn: (clientName) => api.post('/shifts/clock-in', null, { params: clientName ? { client_name: clientName } : {} }),
   clockOut: () => api.post('/shifts/clock-out'),
   today: () => api.get('/shifts/today'),
   list: (params) => api.get('/shifts', { params }),
@@ -63,8 +67,8 @@ export const analyticsApi = {
   weekly: () => api.get('/analytics/weekly'),
   /**
    * Fetch a short-lived export token (60s), then trigger a file download
-   * via window.open(). This avoids putting the long-lived session JWT in
-   * a URL query param where it would appear in server logs and browser history.
+   * via fetch+blob. This avoids putting the long-lived session JWT in a
+   * URL query param where it would appear in server logs and browser history.
    */
   triggerExport: async (params) => {
     // Step 1: get a short-lived export token via authenticated request

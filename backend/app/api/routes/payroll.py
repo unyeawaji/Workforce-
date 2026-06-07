@@ -115,7 +115,8 @@ def payroll_summary(
         hourly_rate_cents = rate.hourly_rate_cents if rate else 0
         currency = rate.currency if rate else "USD"
         total_hours = round(total_minutes / 60, 2)
-        gross_pay_cents = int(total_hours * hourly_rate_cents)
+        # Integer arithmetic avoids float rounding error (e.g. 61min * $15.00/hr)
+        gross_pay_cents = int(total_minutes * hourly_rate_cents / 60)
 
         results.append(WorkerPayrollOut(
             worker_id=worker.id,
