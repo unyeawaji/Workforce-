@@ -1377,7 +1377,7 @@ export default function AdminDashboard() {
 
       {/* Settings & Attendance panels rendered as full-page overlays over main content */}
       {(tab === 'settings' || tab === 'attendance' || tab === 'payroll') && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: sidebarWidth, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', top: 54, right: 0, bottom: 0, left: sidebarWidth, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
           {tab === 'settings' && <SettingsPanel />}
           {tab === 'attendance' && <AttendancePanel workers={workers} />}
           {tab === 'payroll' && <PayrollPanel workers={workers} />}
