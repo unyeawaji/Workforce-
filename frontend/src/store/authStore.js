@@ -33,6 +33,7 @@ export const useAuthStore = create(
 
         logout: () => {
           set({ user: null, token: null })
+          localStorage.removeItem('wft-auth')
         },
 
         fetchMe: async () => {

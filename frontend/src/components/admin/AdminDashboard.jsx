@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -907,8 +908,8 @@ function AttendancePanel({ workers }) {
       {/* FIX: Unblock reason modal */}
       {unblockModal && (
         <>
-          <div onClick={() => setUnblockModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 100 }} />
-          <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 'min(400px,90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', zIndex: 110, padding: 24 }}>
+          <div onClick={() => setUnblockModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(400px,90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', zIndex: 110, padding: 24 }}>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>🔓 Unblock Shift</div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14, lineHeight: 1.5 }}>
               Provide a reason for unblocking this shift. This will be saved to the audit trail.
@@ -925,6 +926,7 @@ function AttendancePanel({ workers }) {
                 {unblocking === unblockModal ? <Spinner size={12} color="var(--rose)" /> : 'Confirm Unblock'}
               </Button>
             </div>
+          </div>
           </div>
         </>
       )}
@@ -1088,7 +1090,15 @@ function AttendancePanel({ workers }) {
 export default function AdminDashboard() {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
+  const navigate = useNavigate()
   const { dark, toggle: toggleTheme } = useThemeStore()
+
+  const handleLogout = async () => {
+    await Promise.race([unsubscribeAll(), new Promise(r => setTimeout(r, 3000))])
+    logout()
+    navigate('/login', { replace: true })
+  }
+
   const [tab, setTab] = useState('overview')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
@@ -1229,7 +1239,7 @@ export default function AdminDashboard() {
                 <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name}</div>
                 <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>Admin</div>
               </div>
-              <button onClick={async () => { await unsubscribeAll(); logout() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 2 }}>
+              <button onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 2 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
               </button>
             </div>

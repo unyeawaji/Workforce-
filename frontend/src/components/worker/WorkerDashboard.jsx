@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { useActivities, useTodayShift, useToast, useShiftHistory } from '../../hooks'
@@ -249,7 +250,15 @@ function ActivityCard({ activity: a, onEdit, onDelete, delay = 0 }) {
 export default function WorkerDashboard() {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
+  const navigate = useNavigate()
   const { dark, toggle: toggleTheme } = useThemeStore()
+
+  const handleLogout = async () => {
+    await Promise.race([unsubscribeAll(), new Promise(r => setTimeout(r, 3000))])
+    logout()
+    navigate('/login', { replace: true })
+  }
+
   // Live clock for reactive greeting — ticks every minute (no need for per-second here)
   const [greetingNow, setGreetingNow] = useState(new Date())
   useEffect(() => {
@@ -545,7 +554,7 @@ export default function WorkerDashboard() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
         </button>
         <Avatar name={user?.name} size={30} />
-        <button onClick={async () => { await Promise.race([unsubscribeAll(), new Promise(r => setTimeout(r, 3000))]); logout() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }} title="Logout">
+        <button onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }} title="Logout">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
         </button>
       </div>
@@ -884,12 +893,11 @@ export default function WorkerDashboard() {
       {/* Periodic Check-In Modal */}
       {showCheckInModal && (
         <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
             width: 'min(440px, 92vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',
             border: `1.5px solid ${checkInStatus?.overdue ? 'var(--rose-b)' : 'var(--amber-b)'}`,
-            boxShadow: 'var(--shadow-xl)', zIndex: 70, padding: 24, maxHeight: '90vh', overflowY: 'auto',
+            boxShadow: 'var(--shadow-xl)', padding: 24, maxHeight: '90vh', overflowY: 'auto',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ fontSize: 16, fontWeight: 700 }}>
@@ -948,15 +956,15 @@ export default function WorkerDashboard() {
               </Button>
             </div>
           </div>
+          </div>
         </>
       )}
 
       {/* ── How-to Guide Modal ─────────────────────────────────────────── */}
       {showGuide && (
         <>
-          <div onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+          <div onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
             zIndex: 70, width: '92%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto',
             background: 'var(--surface)', border: '1px solid var(--border)',
             borderRadius: 'var(--r-xl)', padding: 24, boxShadow: 'var(--shadow-lg)',
@@ -1017,15 +1025,15 @@ export default function WorkerDashboard() {
               Got it, let's go
             </Button>
           </div>
+          </div>
         </>
       )}
 
       {/* Password Change Modal */}
       {showPwModal && (
         <>
-          <div onClick={() => setShowPwModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+          <div onClick={() => setShowPwModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
             width: 'min(400px, 90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',
             border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', zIndex: 70, padding: 24,
           }}>
@@ -1048,6 +1056,7 @@ export default function WorkerDashboard() {
                 </Button>
               </div>
             )}
+          </div>
           </div>
         </>
       )}

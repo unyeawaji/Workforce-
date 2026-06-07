@@ -21,8 +21,8 @@ api.interceptors.response.use(
       // Import dynamically to avoid circular dependency at module load time
       import('../store/authStore').then(({ useAuthStore }) => {
         useAuthStore.getState().logout()
+        window.location.href = '/login'
       })
-      window.location.href = '/login'
     }
     return Promise.reject(err)
   }
