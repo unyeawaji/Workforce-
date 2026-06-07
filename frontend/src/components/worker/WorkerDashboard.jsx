@@ -643,8 +643,8 @@ export default function WorkerDashboard() {
                 You're now clocked in. Enable push notifications so we can remind you when your check-in is due — even if you close this tab.
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <Button variant=\"secondary\" size=\"sm\" onClick={() => setShowPushClockInPrompt(false)}>No thanks</Button>
-                <Button variant=\"primary\" size=\"sm\" disabled={pushLoading} onClick={async () => {
+                <Button variant="secondary" size="sm" onClick={() => setShowPushClockInPrompt(false)}>No thanks</Button>
+                <Button variant="primary" size="sm" disabled={pushLoading} onClick={async () => {
                   setPushLoading(true)
                   try {
                     const ok = await requestAndSubscribe()
@@ -653,7 +653,7 @@ export default function WorkerDashboard() {
                   } catch (_) {}
                   finally { setPushLoading(false); setShowPushClockInPrompt(false) }
                 }}>
-                  {pushLoading ? <Spinner size={11} color=\"#fff\" /> : 'Enable Notifications'}
+                  {pushLoading ? <Spinner size={11} color="#fff" /> : 'Enable Notifications'}
                 </Button>
               </div>
             </div>
