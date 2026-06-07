@@ -298,7 +298,7 @@ export default function WorkerDashboard() {
     const ok = await requestAndSubscribe()
     setPushEnabled(ok)
     setPushBanner(false)
-    if (ok) toast('Push notifications enabled! We'll remind you when check-ins are due.')
+    if (ok) toast(`Push notifications enabled! We'll remind you when check-ins are due.`)
     else toast('Could not enable notifications. Check your browser settings.', 'error')
     setPushLoading(false)
   }
