@@ -12,10 +12,11 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60   # 1 hour; configurable via env var
 
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
+    # Admin seeding — required on first deploy
     ADMIN_EMAIL: str = "admin@aiinduction.local"
     ADMIN_PASSWORD: str = ""
 
@@ -23,13 +24,6 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str = ""
     CLOUDINARY_API_KEY: str = ""
     CLOUDINARY_API_SECRET: str = ""
-
-    # Web Push / VAPID — required for push notifications
-    # Generate once with: python -c "from pywebpush import generate_vapid_keys; generate_vapid_keys()"
-    # Or use: npx web-push generate-vapid-keys
-    VAPID_PRIVATE_KEY: str = ""
-    VAPID_PUBLIC_KEY: str = ""
-    VAPID_MAILTO: str = "mailto:admin@example.com"
 
     @field_validator("SECRET_KEY")
     @classmethod

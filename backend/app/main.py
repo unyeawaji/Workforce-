@@ -9,8 +9,7 @@ from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import get_password_hash
 from app.db.database import engine, Base, SessionLocal
-from app.api.routes import auth, users, activities, shifts, analytics, payroll, schedule, push
-from app.core.scheduler import start_scheduler, stop_scheduler
+from app.api.routes import auth, users, activities, shifts, analytics, payroll, schedule
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,20 +49,20 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     Base.metadata.create_all(bind=engine)
     seed_admin()
-    start_scheduler()          # ← start push reminder scheduler
     yield
-    stop_scheduler()           # ← clean shutdown
     logger.info("Shutting down...")
 
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
+    # Disable public API docs in production
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
     lifespan=lifespan,
 )
 
+# Attach limiter state and its 429 handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -83,7 +82,6 @@ app.include_router(activities.router, prefix=PREFIX)
 app.include_router(analytics.router, prefix=PREFIX)
 app.include_router(payroll.router, prefix=PREFIX)
 app.include_router(schedule.router, prefix=PREFIX)
-app.include_router(push.router, prefix=PREFIX)     # ← push subscription routes
 
 
 @app.get("/health")

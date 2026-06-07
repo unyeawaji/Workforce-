@@ -14,5 +14,3 @@ pandas==2.2.2
 openpyxl==3.1.2
 cloudinary==1.40.0
 slowapi==0.1.9
-pywebpush==2.0.0
-APScheduler==3.10.4

@@ -45,7 +45,6 @@ class User(Base):
                               foreign_keys="Activity.worker_id", cascade="all, delete-orphan")
     shifts = relationship("Shift", back_populates="worker", cascade="all, delete-orphan")
     check_ins = relationship("CheckIn", back_populates="worker", cascade="all, delete-orphan")
-    push_subscriptions = relationship("PushSubscription", back_populates="worker", cascade="all, delete-orphan")
 
 
 class WorkSchedule(Base):
@@ -53,9 +52,12 @@ class WorkSchedule(Base):
     __tablename__ = "work_schedule"
 
     id = Column(Integer, primary_key=True, default=1)
+    # Latest time workers can clock in before being flagged late (UTC hour:minute)
     clock_in_deadline_hour = Column(Integer, default=9)
     clock_in_deadline_minute = Column(Integer, default=0)
+    # How often workers must submit a check-in (minutes)
     checkin_interval_minutes = Column(Integer, default=120)
+    # Grace period after deadline before blocking (minutes)
     grace_period_minutes = Column(Integer, default=15)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -65,7 +67,7 @@ class DaySchedule(Base):
     __tablename__ = "day_schedules"
 
     id = Column(Integer, primary_key=True, index=True)
-    day_of_week = Column(Integer, unique=True, nullable=False)
+    day_of_week = Column(Integer, unique=True, nullable=False)  # 0=Mon … 6=Sun
     is_working_day = Column(Boolean, default=True, nullable=False)
     work_start_hour = Column(Integer, default=9)
     work_start_minute = Column(Integer, default=0)
@@ -95,6 +97,7 @@ class Shift(Base):
     total_minutes = Column(Integer, nullable=True)
     screenshot_url = Column(String(500), nullable=True)
 
+    # Punctuality
     is_late = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
     block_reason = Column(String(255), nullable=True)
@@ -127,7 +130,7 @@ class DepartmentRate(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     department = Column(String(100), unique=True, nullable=False, index=True)
-    hourly_rate = Column(Integer, nullable=False, default=0)
+    hourly_rate = Column(Integer, nullable=False, default=0)  # stored in cents to avoid float issues
     currency = Column(String(10), default="USD", nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -153,18 +156,3 @@ class Activity(Base):
 
     worker = relationship("User", back_populates="activities", foreign_keys=[worker_id])
     verifier = relationship("User", foreign_keys=[verified_by])
-
-
-class PushSubscription(Base):
-    """Web Push subscription endpoint stored per worker device."""
-    __tablename__ = "push_subscriptions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    worker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    endpoint = Column(Text, nullable=False, unique=True)
-    p256dh = Column(Text, nullable=False)   # browser public key
-    auth = Column(Text, nullable=False)     # auth secret
-    user_agent = Column(String(300), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=_now)
-
-    worker = relationship("User", back_populates="push_subscriptions")
