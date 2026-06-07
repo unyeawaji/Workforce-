@@ -303,7 +303,7 @@ def get_today(db: Session = Depends(get_db), user=Depends(get_current_user)):
 
 # ── Shift list ────────────────────────────────────────────────────────────────
 
-@router.get("/", response_model=List[ShiftOut])
+@router.get("", response_model=List[ShiftOut])
 def list_shifts(
     worker_id: Optional[int] = None,
     date_from: Optional[date] = None,

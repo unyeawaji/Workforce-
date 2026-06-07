@@ -45,10 +45,51 @@ def seed_admin():
         db.close()
 
 
+def run_migrations():
+    """
+    Safe incremental migrations.
+    create_all() only creates missing *tables*, not missing *columns*.
+    This function adds any columns that exist in the models but are absent
+    from the live DB (e.g. after a model update on an existing Supabase DB).
+    Using ADD COLUMN IF NOT EXISTS means this is idempotent and safe to
+    run on every startup — no-op if the column already exists.
+    """
+    from sqlalchemy import text
+    migrations = [
+        # Shift table additions
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS client_name VARCHAR(200)",
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS is_late BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS block_reason VARCHAR(255)",
+        "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS minutes_late INTEGER",
+        # CheckIn table additions
+        "ALTER TABLE check_ins ADD COLUMN IF NOT EXISTS is_missed BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE check_ins ADD COLUMN IF NOT EXISTS note TEXT",
+        # Activity table additions
+        "ALTER TABLE activities ADD COLUMN IF NOT EXISTS verified_by INTEGER REFERENCES users(id) ON DELETE SET NULL",
+        "ALTER TABLE activities ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ",
+        "ALTER TABLE activities ADD COLUMN IF NOT EXISTS admin_feedback TEXT",
+        # User table additions
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100)",
+        # WorkSchedule additions
+        "ALTER TABLE work_schedule ADD COLUMN IF NOT EXISTS grace_period_minutes INTEGER DEFAULT 15",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:
+                logger.warning("Migration skipped (%s): %s", stmt[:60], e)
+        conn.commit()
+    logger.info("Startup migrations complete.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     Base.metadata.create_all(bind=engine)
+    run_migrations()
     seed_admin()
     start_scheduler()          # ← start push reminder scheduler
     yield

@@ -13,7 +13,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 logger = logging.getLogger(__name__)
 
 
-@router.post("/", response_model=UserOut, status_code=201)
+@router.post("", response_model=UserOut, status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depends(require_admin)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -27,7 +27,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depend
     return UserOut.model_validate(user)
 
 
-@router.get("/", response_model=List[UserOut])
+@router.get("", response_model=List[UserOut])
 def list_users(
     role: Optional[UserRole] = None,
     db: Session = Depends(get_db),

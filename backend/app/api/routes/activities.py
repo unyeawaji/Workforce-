@@ -26,7 +26,7 @@ def _assert_editable(a: Activity):
         raise HTTPException(403, "Activity is approved and locked — immutable audit trail.")
 
 
-@router.post("/", response_model=ActivityOut, status_code=201)
+@router.post("", response_model=ActivityOut, status_code=201)
 def create(payload: ActivityCreate, db=Depends(get_db), user=Depends(get_current_user)):
     if user.role != UserRole.worker:
         raise HTTPException(400, "Only workers can submit activities")
@@ -50,7 +50,7 @@ def create(payload: ActivityCreate, db=Depends(get_db), user=Depends(get_current
     return _get(a.id, db)
 
 
-@router.get("/", response_model=List[ActivityOut])
+@router.get("", response_model=List[ActivityOut])
 def list_activities(
     worker_id: Optional[int] = None,
     date_from: Optional[str] = None,
