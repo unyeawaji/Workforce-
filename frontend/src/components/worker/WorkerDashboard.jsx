@@ -545,7 +545,7 @@ export default function WorkerDashboard() {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
         </button>
         <Avatar name={user?.name} size={30} />
-        <button onClick={async () => { await unsubscribeAll(); logout() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }} title="Logout">
+        <button onClick={async () => { await Promise.race([unsubscribeAll(), new Promise(r => setTimeout(r, 3000))]); logout() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 4, display: 'flex' }} title="Logout">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
         </button>
       </div>
@@ -884,7 +884,7 @@ export default function WorkerDashboard() {
       {/* Periodic Check-In Modal */}
       {showCheckInModal && (
         <>
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 60 }} />
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
             width: 'min(440px, 92vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',
@@ -954,7 +954,7 @@ export default function WorkerDashboard() {
       {/* ── How-to Guide Modal ─────────────────────────────────────────── */}
       {showGuide && (
         <>
-          <div onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 60 }} />
+          <div onClick={() => { setShowGuide(false); localStorage.setItem('wft_guide_seen', '1') }} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
             zIndex: 70, width: '92%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto',
@@ -1023,7 +1023,7 @@ export default function WorkerDashboard() {
       {/* Password Change Modal */}
       {showPwModal && (
         <>
-          <div onClick={() => setShowPwModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 60 }} />
+          <div onClick={() => setShowPwModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)', zIndex: 60 }} />
           <div style={{
             position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
             width: 'min(400px, 90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)',

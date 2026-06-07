@@ -30,7 +30,7 @@ export default function LoginPage() {
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'var(--bg)', padding: 20,
-      backgroundImage: 'radial-gradient(ellipse at 25% 35%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 55%), radial-gradient(ellipse at 75% 70%, color-mix(in srgb, var(--emerald) 5%, transparent), transparent 50%)',
+      backgroundImage: 'radial-gradient(ellipse at 25% 35%, rgba(29,78,216,0.07), transparent 55%), radial-gradient(ellipse at 75% 70%, rgba(5,150,105,0.05), transparent 50%)',
     }}>
       <div style={{ width: '100%', maxWidth: 380, animation: 'fadeUp 0.5s ease' }}>
 

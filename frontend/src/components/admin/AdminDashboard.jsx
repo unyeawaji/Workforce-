@@ -22,11 +22,10 @@ const NAV = [
 // ── Stat card ──────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color, loading, delay = 0 }) {
   return (
-    <div className="anim-fade-up" style={{ animationDelay: `${delay}ms` }}>
-      <Card hover>
+    <div className="anim-stat" style={{ animationDelay: `${delay}ms` }}>
+      <Card hover accent={color}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: 'var(--font-mono)' }}>{label}</div>
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, marginTop: 4 }} />
         </div>
         {loading ? <Skeleton height={36} style={{ marginBottom: 6 }} /> : (
           <div style={{ fontSize: 32, fontWeight: 700, fontFamily: 'var(--font-display)', fontStyle: 'italic', color, lineHeight: 1, marginBottom: 4 }}>{value}</div>
@@ -1092,7 +1091,22 @@ export default function AdminDashboard() {
   const { dark, toggle: toggleTheme } = useThemeStore()
   const [tab, setTab] = useState('overview')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [drawer, setDrawer] = useState(null)
+
+  // Track mobile breakpoint
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 768px)')
+    const handler = (e) => {
+      setIsMobile(e.matches)
+      if (e.matches) setSidebarOpen(false)
+      else setSidebarOpen(true)
+    }
+    setIsMobile(mq.matches)
+    if (mq.matches) setSidebarOpen(false)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   const { activities, loading: actLoading, verify } = useActivities({ limit: 200 })
   const { workers, loading: workerLoading, create, toggleActive, remove } = useWorkers()
@@ -1121,14 +1135,31 @@ export default function AdminDashboard() {
     toast('Worker removed')
   }
 
+  const sidebarWidth = isMobile ? 0 : (sidebarOpen ? 220 : 64)
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      {/* Mobile sidebar backdrop */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 30, animation: 'fadeIn 0.2s ease' }}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside style={{
-        width: sidebarOpen ? 220 : 64, flexShrink: 0,
-        background: 'var(--surface)', borderRight: '1px solid var(--border)',
+      <aside className="sidebar-texture" style={{
+        background: 'linear-gradient(180deg, var(--surface) 0%, var(--surface2) 100%)',
+        borderRight: '1px solid var(--border)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        transition: 'width 0.25s ease',
+        ...(isMobile ? {
+          position: 'fixed', top: 0, left: 0, bottom: 0, width: 220, zIndex: 35,
+          transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform 0.25s ease',
+        } : {
+          width: sidebarOpen ? 220 : 64, flexShrink: 0,
+          transition: 'width 0.25s ease',
+        }),
       }}>
         {/* Logo */}
         <div style={{ padding: sidebarOpen ? '22px 20px 18px' : '22px 12px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
@@ -1159,27 +1190,34 @@ export default function AdminDashboard() {
 
         {/* Nav */}
         <nav style={{ padding: '12px 8px', flex: 1 }}>
-          {NAV.map(item => (
-            <button key={item.id} onClick={() => setTab(item.id)} style={{
-              display: 'flex', alignItems: 'center', gap: 10, width: '100%',
-              padding: sidebarOpen ? '9px 12px' : '9px', borderRadius: 'var(--r)',
-              border: 'none', cursor: 'pointer', marginBottom: 2,
-              background: tab === item.id ? 'var(--primary-s)' : 'transparent',
-              color: tab === item.id ? 'var(--primary)' : 'var(--text3)',
-              fontFamily: 'var(--font-sans)', fontWeight: 500, fontSize: 13,
-              transition: 'all 0.15s', justifyContent: sidebarOpen ? 'space-between' : 'center',
-            }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" style={{ flexShrink: 0 }}>
-                  <path d={item.icon} />
-                </svg>
-                {sidebarOpen && item.label}
-              </span>
-              {sidebarOpen && item.id === 'feed' && pending > 0 && (
-                <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'var(--amber)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{pending}</span>
-              )}
-            </button>
-          ))}
+          {NAV.map(item => {
+            const active = tab === item.id
+            return (
+              <button key={item.id} onClick={() => setTab(item.id)} style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                padding: sidebarOpen ? '9px 12px 9px 14px' : '9px', borderRadius: 'var(--r)',
+                border: 'none', cursor: 'pointer', marginBottom: 2,
+                background: active ? 'var(--primary-s)' : 'transparent',
+                color: active ? 'var(--primary)' : 'var(--text3)',
+                fontFamily: 'var(--font-sans)', fontWeight: active ? 600 : 500, fontSize: 13,
+                transition: 'all 0.15s', justifyContent: sidebarOpen ? 'space-between' : 'center',
+                position: 'relative',
+                boxShadow: active ? 'inset 3px 0 0 var(--primary)' : 'none',
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth={active ? 2.25 : 1.75}
+                    style={{ flexShrink: 0, transform: active ? 'translateX(1px)' : 'translateX(0)', transition: 'transform 0.2s, stroke-width 0.15s' }}>
+                    <path d={item.icon} />
+                  </svg>
+                  {sidebarOpen && item.label}
+                </span>
+                {sidebarOpen && item.id === 'feed' && pending > 0 && (
+                  <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'var(--amber)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{pending}</span>
+                )}
+              </button>
+            )
+          })}
         </nav>
 
         {/* User */}
@@ -1202,7 +1240,7 @@ export default function AdminDashboard() {
       {/* Main */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* Top bar */}
-        <div style={{ height: 54, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', background: 'var(--surface)', flexShrink: 0 }}>
+        <div style={{ height: 54, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', background: 'var(--surface)', flexShrink: 0, position: 'relative', zIndex: 20 }}>
           <button onClick={() => setSidebarOpen(s => !s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 4, borderRadius: 'var(--r-sm)' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
@@ -1255,15 +1293,15 @@ export default function AdminDashboard() {
                     <AreaChart data={weekly}>
                       <defs>
                         <linearGradient id="aHours" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.2}/>
+                          <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.35}/>
                           <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
                       <XAxis dataKey="day" interval={0} minTickGap={0} tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
                       <YAxis tick={{ fontSize: 11, fill: 'var(--text3)', fontFamily: 'var(--font-mono)' }} axisLine={false} tickLine={false}/>
-                      <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r)', fontSize: 12 }} cursor={{ stroke: 'var(--border)' }}/>
-                      <Area type="monotone" dataKey="hours" stroke="var(--primary)" strokeWidth={2} fill="url(#aHours)" dot={false}/>
+                      <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--r)', fontSize: 12, boxShadow: 'var(--shadow)' }} cursor={{ stroke: 'var(--primary)', strokeOpacity: 0.2, strokeWidth: 1 }}/>
+                      <Area type="monotone" dataKey="hours" stroke="var(--primary)" strokeWidth={2.5} fill="url(#aHours)" dot={false} activeDot={{ r: 5, fill: "var(--primary)", strokeWidth: 2, stroke: "var(--surface)" }}/>
                     </AreaChart>
                   </ResponsiveContainer></div>
                 </Card>
@@ -1329,7 +1367,7 @@ export default function AdminDashboard() {
 
       {/* Settings & Attendance panels rendered as full-page overlays over main content */}
       {(tab === 'settings' || tab === 'attendance' || tab === 'payroll') && (
-        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: 220, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
+        <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, left: sidebarWidth, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
           {tab === 'settings' && <SettingsPanel />}
           {tab === 'attendance' && <AttendancePanel workers={workers} />}
           {tab === 'payroll' && <PayrollPanel workers={workers} />}
