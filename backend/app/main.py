@@ -84,9 +84,14 @@ def run_migrations():
     ]
     with engine.connect() as conn:
         for stmt in migrations:
+            # Use a savepoint per statement so one failure doesn't abort the
+            # entire transaction and poison all subsequent migrations.
             try:
+                conn.execute(text("SAVEPOINT mig"))
                 conn.execute(text(stmt))
+                conn.execute(text("RELEASE SAVEPOINT mig"))
             except Exception as e:
+                conn.execute(text("ROLLBACK TO SAVEPOINT mig"))
                 logger.warning("Migration skipped (%s): %s", stmt[:60], e)
         conn.commit()
     logger.info("Startup migrations complete.")
