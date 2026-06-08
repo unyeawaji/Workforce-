@@ -54,7 +54,7 @@ class WorkSchedule(Base):
     __tablename__ = "work_schedule"
 
     id = Column(Integer, primary_key=True, default=1)
-    clock_in_deadline_hour = Column(Integer, default=16)
+    clock_in_deadline_hour = Column(Integer, default=15)
     clock_in_deadline_minute = Column(Integer, default=0)
     checkin_interval_minutes = Column(Integer, default=120)
     grace_period_minutes = Column(Integer, default=15)
@@ -68,9 +68,9 @@ class DaySchedule(Base):
     id = Column(Integer, primary_key=True, index=True)
     day_of_week = Column(Integer, unique=True, nullable=False)
     is_working_day = Column(Boolean, default=True, nullable=False)
-    work_start_hour = Column(Integer, default=9)
+    work_start_hour = Column(Integer, default=15)
     work_start_minute = Column(Integer, default=0)
-    work_end_hour = Column(Integer, default=17)
+    work_end_hour = Column(Integer, default=23)
     work_end_minute = Column(Integer, default=0)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 

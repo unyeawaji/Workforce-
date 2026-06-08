@@ -75,9 +75,10 @@ def run_migrations():
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(100)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS client_name VARCHAR(200)",
         # WorkSchedule clock-in deadline default update (16:00)
-        "UPDATE work_schedule SET clock_in_deadline_hour = 16 WHERE clock_in_deadline_hour = 9",
-        # Fix work_end to 03:00 next day for cross-midnight shifts
-        "UPDATE day_schedule SET work_end_hour = 3, work_end_minute = 0 WHERE work_end_hour IN (17, 23) AND work_end_minute IN (0, 59)",
+        "UPDATE work_schedule SET clock_in_deadline_hour = 15 WHERE clock_in_deadline_hour IN (9, 16)",
+        # Update existing day_schedule rows to 16:00 start if still on old 9:00 default
+        "UPDATE day_schedule SET work_start_hour = 15, work_start_minute = 0 WHERE work_start_hour IN (9, 16)",
+        "UPDATE day_schedule SET work_end_hour = 23, work_end_minute = 59 WHERE work_end_hour = 17",
         # WorkSchedule additions
         "ALTER TABLE work_schedule ADD COLUMN IF NOT EXISTS grace_period_minutes INTEGER DEFAULT 15",
     ]

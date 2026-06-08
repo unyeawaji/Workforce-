@@ -752,16 +752,7 @@ function WeeklyScheduleEditor() {
                     onChange={e => update(d.day_of_week, 'work_start_minute', parseInt(e.target.value))}
                     style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                  <span style={{ color: 'var(--text3)' }}>End</span>
-                  <input type="number" min={0} max={23} value={d.work_end_hour}
-                    onChange={e => update(d.day_of_week, 'work_end_hour', parseInt(e.target.value))}
-                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
-                  <span style={{ color: 'var(--text3)' }}>:</span>
-                  <input type="number" min={0} max={59} value={d.work_end_minute}
-                    onChange={e => update(d.day_of_week, 'work_end_minute', parseInt(e.target.value))}
-                    style={{ width: 50, padding: '5px 8px', borderRadius: 'var(--r)', border: '1px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 12 }} />
-                </div>
+
                 <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>UTC</div>
               </>
             )}

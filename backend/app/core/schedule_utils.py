@@ -54,7 +54,7 @@ def seed_default_schedule(db: Session) -> None:
             db.add(DaySchedule(
                 day_of_week=dow,
                 is_working_day=dow < 5,          # Mon–Fri working, Sat–Sun off
-                work_start_hour=16, work_start_minute=0,
+                work_start_hour=15, work_start_minute=0,
                 work_end_hour=23,   work_end_minute=59,  # end time not enforced — worker clocks out manually
             ))
         db.commit()
@@ -144,7 +144,7 @@ def get_work_window_status(db: Session, now: datetime) -> WorkWindowStatus:
     if not sched:
         sched = DaySchedule(
             day_of_week=dow, is_working_day=False,
-            work_start_hour=16, work_start_minute=0,
+            work_start_hour=15, work_start_minute=0,
             work_end_hour=3,    work_end_minute=0,
         )
 
