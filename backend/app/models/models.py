@@ -39,6 +39,7 @@ class User(Base):
     role = Column(SAEnum(UserRole), nullable=False, default=UserRole.worker)
     department = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    client_name = Column(String(200), nullable=True)   # saved client — pre-filled at clock-in
     created_at = Column(DateTime(timezone=True), default=_now)
 
     activities = relationship("Activity", back_populates="worker",
@@ -53,7 +54,7 @@ class WorkSchedule(Base):
     __tablename__ = "work_schedule"
 
     id = Column(Integer, primary_key=True, default=1)
-    clock_in_deadline_hour = Column(Integer, default=9)
+    clock_in_deadline_hour = Column(Integer, default=16)
     clock_in_deadline_minute = Column(Integer, default=0)
     checkin_interval_minutes = Column(Integer, default=120)
     grace_period_minutes = Column(Integer, default=15)

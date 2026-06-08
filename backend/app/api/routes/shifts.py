@@ -8,7 +8,7 @@ from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
 from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate
 from app.api.deps import get_current_user, require_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
-from app.core.schedule_utils import get_work_window_status
+from app.core.schedule_utils import get_work_window_status, logical_today
 
 router = APIRouter(prefix="/shifts", tags=["Shifts"])
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ MAX_TASKS_PER_CHECKIN = 500        # FIX: cap on outlier_tasks_completed
 
 
 def _today() -> date:
-    return datetime.now(timezone.utc).date()
+    return logical_today(datetime.now(timezone.utc))
 
 
 def _get_schedule(db: Session) -> WorkSchedule:
@@ -111,8 +111,14 @@ def clock_in(client_name: Optional[str] = None, db: Session = Depends(get_db), u
         raise HTTPException(403, window.message)
 
     shift.clock_in = now
-    if client_name:
-        shift.client_name = client_name.strip()
+    # Resolve client: use provided name, or fall back to user's saved client
+    resolved_client = (client_name.strip() if client_name and client_name.strip()
+                       else user.client_name)
+    if resolved_client:
+        shift.client_name = resolved_client
+        # Persist to user profile if this is new or changed
+        if user.client_name != resolved_client:
+            user.client_name = resolved_client
     schedule = _get_schedule(db)
     _check_punctuality(shift, schedule, now)
     db.commit()

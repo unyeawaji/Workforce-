@@ -44,9 +44,7 @@ def update_day_schedule(
 ):
     if not 0 <= day_of_week <= 6:
         raise HTTPException(400, "day_of_week must be 0 (Mon) to 6 (Sun)")
-    if payload.work_end_hour * 60 + payload.work_end_minute <= \
-       payload.work_start_hour * 60 + payload.work_start_minute:
-        raise HTTPException(400, "End time must be after start time")
+    # Cross-midnight schedules (e.g. 16:00–03:00) are valid — no end>start check
     seed_default_schedule(db)
     sched = db.query(DaySchedule).filter(DaySchedule.day_of_week == day_of_week).first()
     for k, v in payload.model_dump().items():

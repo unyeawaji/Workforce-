@@ -273,7 +273,7 @@ export default function WorkerDashboard() {
   const [editItem, setEditItem] = useState(null)
   const [filter, setFilter] = useState('all')
   const [clockError, setClockError] = useState('')
-  const [clientName, setClientName] = useState('')
+  const [clientName, setClientName] = useState(user?.client_name || '')
   const [activeTab, setActiveTab] = useState('today')
   const [showPwModal, setShowPwModal] = useState(false)
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
@@ -433,7 +433,7 @@ export default function WorkerDashboard() {
 
   const handleClockIn = async () => {
     setClockError('')
-    if (!clientName.trim()) { setClockError('Please enter the client name before clocking in'); return }
+    if (!clientName.trim() && !user?.client_name) { setClockError('Please enter the client name before clocking in'); return }
     try {
       await clockIn(clientName.trim())
       toast('Clocked in successfully!')
@@ -720,23 +720,46 @@ export default function WorkerDashboard() {
             </div>
           ) : (
             <>
-          {/* Client name input — required before clocking in */}
+          {/* Client name — pre-filled from profile, editable before first clock-in */}
           {!shift?.clock_in && (
             <Card style={{ marginBottom: 16, padding: '14px 16px' }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>👤 Who are you working for today?</div>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>Enter the client name before clocking in.</div>
-              <input
-                type="text"
-                placeholder="e.g. Outlier AI, Client ABC…"
-                value={clientName}
-                onChange={e => setClientName(e.target.value)}
-                style={{
-                  width: '100%', padding: '9px 12px', borderRadius: 'var(--r)',
-                  border: '1.5px solid var(--border)', background: 'var(--surface2)',
-                  color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)',
-                  boxSizing: 'border-box',
-                }}
-              />
+              {user?.client_name ? (
+                <>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>
+                    Your saved client is shown below. Edit it if it has changed.
+                  </div>
+                  <input
+                    type="text"
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 'var(--r)',
+                      border: '1.5px solid var(--primary)', background: 'var(--surface2)',
+                      color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+                    Enter your client name. It will be saved and pre-filled for future shifts.
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="e.g. Outlier AI, Client ABC…"
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                    style={{
+                      width: '100%', padding: '9px 12px', borderRadius: 'var(--r)',
+                      border: '1.5px solid var(--border)', background: 'var(--surface2)',
+                      color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-sans)',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </>
+              )}
             </Card>
           )}
           {/* Show current client while clocked in */}

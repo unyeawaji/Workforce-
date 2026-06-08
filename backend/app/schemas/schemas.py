@@ -47,6 +47,7 @@ class UserOut(BaseModel):
     role: UserRole
     department: Optional[str]
     is_active: bool
+    client_name: Optional[str] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
