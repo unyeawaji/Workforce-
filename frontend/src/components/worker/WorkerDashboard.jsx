@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { useActivities, useTodayShift, useToast, useShiftHistory } from '../../hooks'
-import api, { shiftsApi, activitiesApi, profileApi } from '../../lib/api'
+import api, { shiftsApi, activitiesApi, profileApi, payrollApi, clientsApi } from '../../lib/api'
 import { fmtTime, fmtDate, getDuration, fmtMinutes, getErrorMessage } from '../../lib/utils'
-import { Avatar, Badge, Button, Card, Input, Textarea, Select, Spinner, Alert, EmptyState, Divider, ToastContainer } from '../ui'
+import { Avatar, Badge, Button, Card, Input, Textarea, Select, Spinner, Alert, EmptyState, Divider, ToastContainer, StarDisplay } from '../ui'
 import { registerSW, requestAndSubscribe, unsubscribeAll, isPushSubscribed } from '../../lib/pushNotifications'
 
 // ── Live clock ────────────────────────────────────────────────────────────────
@@ -242,6 +242,272 @@ function ActivityCard({ activity: a, onEdit, onDelete, delay = 0 }) {
           )}
         </Card>
       </div>
+    </div>
+  )
+}
+
+// ── Shift history card (with optional worker note for late/blocked shifts) ────
+function ShiftHistoryCard({ shift: s, delay = 0 }) {
+  const [editing, setEditing] = useState(false)
+  const [note, setNote] = useState(s.worker_note || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [savedNote, setSavedNote] = useState(s.worker_note || '')
+
+  const flagged = s.is_late || s.is_blocked
+
+  const handleSave = async () => {
+    if (!note.trim()) { setError('Note cannot be empty'); return }
+    setSaving(true); setError('')
+    try {
+      await shiftsApi.updateNote(s.id, note.trim())
+      setSavedNote(note.trim())
+      setEditing(false)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="anim-fade-up" style={{
+      animationDelay: `${delay}ms`,
+      background: 'var(--surface)', border: `1px solid ${s.is_blocked ? 'var(--rose-b)' : s.is_late ? 'var(--amber-b)' : 'var(--border)'}`,
+      borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        {s.total_minutes ? (
+          <span style={{ fontSize: 12, color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+            {Math.floor(s.total_minutes / 60)}h {s.total_minutes % 60}m
+          </span>
+        ) : (
+          <span style={{ fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>In progress</span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 5, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {s.clock_in && <span>In: {new Date(s.clock_in).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
+        {s.clock_out && <span>Out: {new Date(s.clock_out).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
+        {s.screenshot_url && <span style={{ color: 'var(--emerald)' }}>📸 Screenshot</span>}
+        {s.is_late && <span style={{ color: 'var(--amber)' }}>⚠ Late{s.minutes_late ? ` (${s.minutes_late}m)` : ''}</span>}
+        {s.is_blocked && <span style={{ color: 'var(--rose)' }}>⛔ Blocked</span>}
+      </div>
+
+      {flagged && (
+        <div style={{ marginTop: 10 }}>
+          {!editing && savedNote && (
+            <div style={{ padding: '8px 12px', background: 'var(--surface2)', borderRadius: 'var(--r)', fontSize: 12, color: 'var(--text2)', borderLeft: '3px solid var(--violet)', marginBottom: 6 }}>
+              {savedNote}
+            </div>
+          )}
+          {editing ? (
+            <div>
+              {error && <Alert message={error} type="error" onClose={() => setError('')} style={{ marginBottom: 8 }} />}
+              <Textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Explain what happened — traffic, internet outage, overslept, etc."
+                rows={2}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+                  {saving ? <Spinner size={11} color="#fff" /> : 'Save Note'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { setEditing(false); setNote(savedNote); setError('') }}>Cancel</Button>
+              </div>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+              {savedNote ? 'Edit note' : '+ Add a note explaining this'}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Reviews view (read-only — what clients have said about this worker) ──────
+function ReviewsView() {
+  const [reviews, setReviews] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    clientsApi.reviewsAboutMe()
+      .then(({ data }) => setReviews(data))
+      .catch(() => setError('Could not load your reviews.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const avg = reviews.length
+    ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length)
+    : null
+
+  return (
+    <div>
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>My Reviews</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>
+        What clients have said about your work. Use it to see what's landing well.
+      </div>
+
+      {error && <Alert message={error} type="error" onClose={() => setError('')} style={{ marginBottom: 16 }} />}
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2].map(i => <div key={i} className="skeleton" style={{ height: 70 }} />)}
+        </div>
+      ) : reviews.length === 0 ? (
+        <EmptyState icon="⭐" title="No reviews yet" sub="Reviews from clients you work with will show up here." />
+      ) : (
+        <>
+          <Card style={{ marginBottom: 16, padding: '18px 20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--text3)', marginBottom: 8 }}>
+              Average Rating
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--amber)', letterSpacing: -0.5, marginBottom: 6 }}>
+              {avg.toFixed(1)}
+            </div>
+            <StarDisplay rating={Math.round(avg)} size={18} />
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+              from {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+            </div>
+          </Card>
+
+          {reviews.map((r, i) => (
+            <div key={r.id} className="anim-fade-up" style={{
+              animationDelay: `${i * 40}ms`,
+              background: 'var(--surface)', border: '1px solid var(--border)',
+              borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 10,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: r.comment ? 8 : 0 }}>
+                <StarDisplay rating={r.rating} />
+                <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                  {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  {r.edited_at && ' · edited'}
+                </span>
+              </div>
+              {r.comment && (
+                <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5 }}>{r.comment}</div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Pay summary view ──────────────────────────────────────────────────────────
+function PayView() {
+  const [range, setRange] = useState('this_week') // 'this_week' | 'this_month' | 'all'
+  const [summary, setSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const fetchSummary = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const params = {}
+      const now = new Date()
+      if (range === 'this_week') {
+        const monday = new Date(now)
+        const dow = (monday.getDay() + 6) % 7 // days since Monday
+        monday.setDate(monday.getDate() - dow)
+        params.date_from = monday.toISOString().slice(0, 10)
+        params.date_to = now.toISOString().slice(0, 10)
+      } else if (range === 'this_month') {
+        const first = new Date(now.getFullYear(), now.getMonth(), 1)
+        params.date_from = first.toISOString().slice(0, 10)
+        params.date_to = now.toISOString().slice(0, 10)
+      }
+      // 'all' sends no date params — backend defaults to all-time
+      const { data } = await payrollApi.mySummary(params)
+      setSummary(data)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchSummary() }, [range])
+
+  const fmtMoney = (cents, currency) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format((cents || 0) / 100)
+    } catch {
+      return `${((cents || 0) / 100).toFixed(2)} ${currency || ''}`
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>My Pay</div>
+      <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 16 }}>
+        Estimated gross pay based on your hours and department rate. Final pay may differ — check with your admin.
+      </div>
+
+      <div style={{ display: 'flex', gap: 3, marginBottom: 18, padding: 4, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+        {[['this_week', 'This Week'], ['this_month', 'This Month'], ['all', 'All Time']].map(([v, l]) => (
+          <button key={v} onClick={() => setRange(v)} style={{
+            flex: 1, padding: '7px 4px', borderRadius: 'var(--r-sm)', border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
+            background: range === v ? 'var(--surface)' : 'transparent',
+            color: range === v ? 'var(--text)' : 'var(--text3)',
+            boxShadow: range === v ? 'var(--shadow-sm)' : 'none', transition: 'all 0.15s',
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {error && <Alert message={error} type="error" onClose={() => setError('')} style={{ marginBottom: 16 }} />}
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[1, 2].map(i => <div key={i} className="skeleton" style={{ height: 80 }} />)}
+        </div>
+      ) : !summary ? null : (
+        <>
+          <Card style={{ marginBottom: 14, padding: '20px 22px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6, color: 'var(--text3)', marginBottom: 8 }}>
+              Estimated Gross Pay
+            </div>
+            <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--emerald)', letterSpacing: -1 }}>
+              {fmtMoney(summary.gross_pay_cents, summary.currency)}
+            </div>
+            {summary.hourly_rate_cents === 0 && (
+              <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 8 }}>
+                No hourly rate set for your department yet — ask your admin.
+              </div>
+            )}
+          </Card>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Card style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--violet)' }}>{summary.total_hours}h</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>hours worked</div>
+            </Card>
+            <Card style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{summary.shift_count}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>completed shifts</div>
+            </Card>
+            <Card style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{summary.check_in_count}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>check-ins</div>
+            </Card>
+            <Card style={{ padding: '14px 16px' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber)' }}>{summary.outlier_tasks_total}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>tasks logged</div>
+            </Card>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 14, textAlign: 'center' }}>
+            Rate: {fmtMoney(summary.hourly_rate_cents, summary.currency)}/hour · {summary.department || 'No department set'}
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -571,7 +837,7 @@ export default function WorkerDashboard() {
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 3, marginBottom: 20, padding: 4, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
-            {[['today', 'Today'], ['history', 'History']].map(([v, l]) => (
+            {[['today', 'Today'], ['history', 'History'], ['pay', 'Pay'], ['reviews', 'Reviews']].map(([v, l]) => (
               <button key={v} onClick={() => setActiveTab(v)} style={{
                 flex: 1, padding: '7px 4px', borderRadius: 'var(--r-sm)', border: 'none', cursor: 'pointer',
                 fontSize: 12, fontWeight: 500, fontFamily: 'var(--font-sans)',
@@ -685,7 +951,11 @@ export default function WorkerDashboard() {
             </div>
           )}
 
-          {activeTab === 'history' ? (
+          {activeTab === 'pay' ? (
+            <PayView />
+          ) : activeTab === 'reviews' ? (
+            <ReviewsView />
+          ) : activeTab === 'history' ? (
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Shift History</div>
               {historyLoading ? (
@@ -695,27 +965,7 @@ export default function WorkerDashboard() {
               ) : shiftHistory.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 40, color: 'var(--text3)', fontSize: 13 }}>No shift history yet.</div>
               ) : shiftHistory.map((s, i) => (
-                <div key={s.id} className="anim-fade-up" style={{
-                  animationDelay: `${i * 40}ms`,
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  borderRadius: 'var(--r-lg)', padding: '14px 16px', marginBottom: 10,
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                    {s.total_minutes ? (
-                      <span style={{ fontSize: 12, color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                        {Math.floor(s.total_minutes / 60)}h {s.total_minutes % 60}m
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>In progress</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 5, display: 'flex', gap: 12 }}>
-                    {s.clock_in && <span>In: {new Date(s.clock_in).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
-                    {s.clock_out && <span>Out: {new Date(s.clock_out).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>}
-                    {s.screenshot_url && <span style={{ color: 'var(--emerald)' }}>📸 Screenshot</span>}
-                  </div>
-                </div>
+                <ShiftHistoryCard key={s.id} shift={s} delay={i * 40} />
               ))}
             </div>
           ) : (

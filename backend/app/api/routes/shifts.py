@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
-from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate
+from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate, ShiftNoteUpdate
 from app.api.deps import get_current_user, require_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
-from app.core.schedule_utils import get_work_window_status, logical_today
+from app.core.schedule_utils import get_work_window_status, logical_today, get_or_create_work_schedule
 
 router = APIRouter(prefix="/shifts", tags=["Shifts"])
 logger = logging.getLogger(__name__)
@@ -23,13 +23,7 @@ def _today() -> date:
 
 
 def _get_schedule(db: Session) -> WorkSchedule:
-    s = db.query(WorkSchedule).filter(WorkSchedule.id == 1).first()
-    if not s:
-        s = WorkSchedule(id=1)
-        db.add(s)
-        db.commit()
-        db.refresh(s)
-    return s
+    return get_or_create_work_schedule(db)
 
 
 def _check_punctuality(shift: Shift, schedule: WorkSchedule, now: datetime):
@@ -307,6 +301,30 @@ def get_today(db: Session = Depends(get_db), user=Depends(get_current_user)):
     return ShiftOut.model_validate(shift) if shift else None
 
 
+# ── Worker: explain a late/blocked shift ──────────────────────────────────────
+
+@router.patch("/{shift_id}/note", response_model=ShiftOut)
+def update_shift_note(
+    shift_id: int,
+    payload: ShiftNoteUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Worker: attach or update an explanation for one of their own shifts —
+    typically used when a shift was flagged late or blocked, so the admin
+    can see context without having to ask separately.
+    """
+    shift = db.query(Shift).filter(Shift.id == shift_id, Shift.worker_id == user.id).first()
+    if not shift:
+        raise HTTPException(404, "Shift not found")
+    shift.worker_note = payload.worker_note
+    db.commit()
+    db.refresh(shift)
+    logger.info("Worker %s added a note to shift %s", user.id, shift_id)
+    return ShiftOut.model_validate(shift)
+
+
 # ── Shift list ────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=List[ShiftOut])
@@ -333,17 +351,18 @@ def list_shifts(
 
 @router.get("/admin/today", response_model=List[ShiftOutFull])
 def admin_today_shifts(db: Session = Depends(get_db), admin=Depends(require_admin)):
+    # Only shifts for workers belonging to this admin's team
+    team_ids = [u.id for u in db.query(User).filter(User.admin_id == admin.id, User.role == UserRole.worker).all()]
     shifts = (
         db.query(Shift)
         .options(joinedload(Shift.worker), joinedload(Shift.check_ins))
-        .filter(Shift.date == _today())
+        .filter(Shift.date == _today(), Shift.worker_id.in_(team_ids))
         .all()
     )
     return [ShiftOutFull.model_validate(s) for s in shifts]
 
 
 # ── Admin: historical shifts (any date range) ─────────────────────────────────
-# FIX: new endpoint so admin can review past check-in screenshots
 
 @router.get("/admin/history", response_model=List[ShiftOutFull])
 def admin_shift_history(
@@ -353,11 +372,13 @@ def admin_shift_history(
     db: Session = Depends(get_db),
     admin=Depends(require_admin),
 ):
+    team_ids = [u.id for u in db.query(User).filter(User.admin_id == admin.id, User.role == UserRole.worker).all()]
     q = (
         db.query(Shift)
         .options(joinedload(Shift.worker), joinedload(Shift.check_ins))
+        .filter(Shift.worker_id.in_(team_ids))
     )
-    if worker_id:
+    if worker_id and worker_id in team_ids:
         q = q.filter(Shift.worker_id == worker_id)
     if date_from:
         q = q.filter(Shift.date >= date_from)
@@ -379,6 +400,10 @@ def unblock_shift(
     shift = db.query(Shift).filter(Shift.id == shift_id).first()
     if not shift:
         raise HTTPException(404, "Shift not found")
+    # Verify the shift's worker belongs to this admin's team
+    worker = db.query(User).filter(User.id == shift.worker_id, User.admin_id == admin.id).first()
+    if not worker:
+        raise HTTPException(403, "Shift belongs to a different team")
     shift.is_blocked = False
     # FIX: persist unblock reason in block_reason field for audit trail
     shift.block_reason = f"[UNBLOCKED by admin#{admin.id}" + (f": {reason}" if reason else "") + "]"

@@ -47,6 +47,10 @@ def update_day_schedule(
     # Cross-midnight schedules (e.g. 16:00–03:00) are valid — no end>start check
     seed_default_schedule(db)
     sched = db.query(DaySchedule).filter(DaySchedule.day_of_week == day_of_week).first()
+    if not sched:
+        # Shouldn't happen via the API alone (seeding is all-or-nothing), but guards
+        # against a partially-seeded table from direct DB access.
+        raise HTTPException(404, f"No schedule row found for day {day_of_week}")
     for k, v in payload.model_dump().items():
         setattr(sched, k, v)
     db.commit()

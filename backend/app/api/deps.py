@@ -18,7 +18,6 @@ def get_current_user(
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token",
                             headers={"WWW-Authenticate": "Bearer"})
-    # Reject export-scoped tokens from being used as session tokens
     if payload.get("purpose") is not None:
         raise HTTPException(status_code=401, detail="Invalid token type",
                             headers={"WWW-Authenticate": "Bearer"})
@@ -39,4 +38,10 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 def require_worker(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.worker:
         raise HTTPException(status_code=403, detail="Worker access required")
+    return user
+
+
+def require_client(user: User = Depends(get_current_user)) -> User:
+    if user.role != UserRole.client:
+        raise HTTPException(status_code=403, detail="Client access required")
     return user

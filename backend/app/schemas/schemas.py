@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr, field_validator, Field
-from app.models.models import UserRole, ActivityStatus, VerificationStatus
+from app.models.models import UserRole, ActivityStatus, VerificationStatus, ApplicationStatus
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
     department: Optional[str] = None
+    deactivation_reason: Optional[str] = Field(None, max_length=500)
 
 
 class UserOut(BaseModel):
@@ -48,7 +49,18 @@ class UserOut(BaseModel):
     department: Optional[str]
     is_active: bool
     client_name: Optional[str] = None
+    admin_id: Optional[int] = None
+    admin_name: Optional[str] = None   # populated for workers/clients — who manages this account
     created_at: datetime
+    deactivated_reason: Optional[str] = None
+    deactivated_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+# ── Admin info (public — for apply page dropdown) ─────────────────────────────
+class AdminPublic(BaseModel):
+    id: int
+    name: str
     model_config = {"from_attributes": True}
 
 
@@ -65,6 +77,7 @@ class ShiftOut(BaseModel):
     is_blocked: bool = False
     block_reason: Optional[str] = None
     minutes_late: Optional[int] = None
+    worker_note: Optional[str] = None
     model_config = {"from_attributes": True}
 
 
@@ -144,14 +157,16 @@ class WorkScheduleOut(BaseModel):
     clock_in_deadline_minute: int
     checkin_interval_minutes: int
     grace_period_minutes: int
+    currency: str
     model_config = {"from_attributes": True}
 
 
 class WorkScheduleUpdate(BaseModel):
     clock_in_deadline_hour: Optional[int] = Field(None, ge=0, le=23)
     clock_in_deadline_minute: Optional[int] = Field(None, ge=0, le=59)
-    checkin_interval_minutes: Optional[int] = Field(None, ge=5)   # min 5 min interval
+    checkin_interval_minutes: Optional[int] = Field(None, ge=5)
     grace_period_minutes: Optional[int] = Field(None, ge=0, le=120)
+    currency: Optional[str] = Field(None, min_length=3, max_length=10)
 
 
 # ── Check-ins ─────────────────────────────────────────────────────────────────
@@ -187,23 +202,31 @@ class ShiftOutFull(BaseModel):
     is_blocked: bool = False
     block_reason: Optional[str] = None
     minutes_late: Optional[int] = None
+    worker_note: Optional[str] = None
     check_ins: List[CheckInOut] = []
     worker: Optional["UserOut"] = None
     model_config = {"from_attributes": True}
 
 
+class ShiftNoteUpdate(BaseModel):
+    worker_note: str = Field(min_length=1, max_length=1000)
+
+
 # ── Department Rates & Payroll ─────────────────────────────────────────────────
 class DepartmentRateUpsert(BaseModel):
     department: str
-    hourly_rate_cents: int  # e.g. 1500 = $15.00
-    currency: str = "USD"
+    hourly_rate_cents: int
+    # Currency is no longer set per-department — it's a single admin-wide setting
+    # (see WorkScheduleUpdate.currency). Accepted here only for backward compatibility
+    # with older clients; the value is ignored.
+    currency: Optional[str] = None
 
 
 class DepartmentRateOut(BaseModel):
     id: int
     department: str
     hourly_rate_cents: int
-    currency: str
+    currency: str   # always mirrors the admin-wide setting, not stored independently
     updated_at: datetime
     model_config = {"from_attributes": True}
 
@@ -212,11 +235,13 @@ class WorkerPayrollOut(BaseModel):
     worker_id: int
     worker_name: str
     department: Optional[str]
+    is_active: bool   # whether the worker is still active — deactivated workers stay
+                       # visible here so payroll for a period they worked isn't lost
     total_minutes: int
     total_hours: float
     hourly_rate_cents: int
     currency: str
-    gross_pay_cents: int  # total_hours * hourly_rate_cents
+    gross_pay_cents: int
     shift_count: int
     check_in_count: int
     outlier_tasks_total: int
@@ -255,7 +280,6 @@ class HolidayOut(BaseModel):
 
 
 class WorkWindowStatus(BaseModel):
-    """Returned to workers so they know if they can clock in."""
     can_clock_in: bool
     is_holiday: bool
     holiday_name: Optional[str] = None
@@ -265,5 +289,148 @@ class WorkWindowStatus(BaseModel):
     work_end_hour: int
     work_end_minute: int
     message: str
-    next_window_day: Optional[str] = None   # e.g. "Monday"
-    next_window_start: Optional[str] = None  # e.g. "09:00"
+    next_window_day: Optional[str] = None
+    next_window_start: Optional[str] = None
+
+
+# ── Client portal ─────────────────────────────────────────────────────────────
+class WorkerLiveStatus(BaseModel):
+    worker_id: int
+    worker_name: str
+    department: Optional[str]
+    is_online: bool               # clocked in, not clocked out
+    clock_in: Optional[datetime]
+    clock_out: Optional[datetime]
+    minutes_today: int            # live elapsed if online, or shift total if clocked out
+    hours_today: float            # minutes_today / 60 rounded to 1dp
+    tasks_today: int              # sum of outlier_tasks_completed for today's shift
+    check_in_count: int
+    last_active_at: Optional[datetime] = None   # latest of clock_in / last check-in / clock_out
+    model_config = {"from_attributes": True}
+
+
+class WorkerDailySummary(BaseModel):
+    """One day's worth of a worker's activity, for the client history view."""
+    date: date
+    worker_id: int
+    worker_name: str
+    department: Optional[str]
+    clock_in: Optional[datetime]
+    clock_out: Optional[datetime]
+    minutes_total: int
+    hours_total: float
+    tasks_total: int
+    check_in_count: int
+
+
+# ── Job Applications ──────────────────────────────────────────────────────────
+class JobApplicationCreate(BaseModel):
+    full_name: str = Field(min_length=2)
+    email: EmailStr
+    password: str = Field(min_length=8)
+    phone: Optional[str] = None
+    cover_letter: Optional[str] = None
+    admin_id: int            # which admin/team they're applying to
+
+
+class JobApplicationOut(BaseModel):
+    id: int
+    user_id: int
+    admin_id: Optional[int]
+    full_name: str
+    email: str
+    phone: Optional[str]
+    cover_letter: Optional[str]
+    status: ApplicationStatus
+    applied_at: datetime
+    reviewed_at: Optional[datetime]
+    model_config = {"from_attributes": True}
+
+
+class PendingCountOut(BaseModel):
+    pending: int
+
+
+# ── Client management ─────────────────────────────────────────────────────────
+class ClientCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str = Field(min_length=8)
+    worker_ids: List[int] = []   # which workers this client can see
+
+
+class ClientWorkerAssign(BaseModel):
+    worker_ids: List[int]
+
+
+class ClientOut(BaseModel):
+    """UserOut extended with the list of assigned worker IDs."""
+    id: int
+    name: str
+    email: str
+    role: UserRole
+    department: Optional[str]
+    is_active: bool
+    admin_id: Optional[int] = None
+    admin_name: Optional[str] = None
+    created_at: datetime
+    assigned_worker_ids: List[int] = []
+    model_config = {"from_attributes": True}
+
+# ── Admin Invites ─────────────────────────────────────────────────────────────
+class InviteCreate(BaseModel):
+    email_hint: Optional[EmailStr] = None   # optional pre-fill
+
+
+class InviteOut(BaseModel):
+    id: int
+    token: str
+    email_hint: Optional[str]
+    used: bool
+    used_at: Optional[datetime]
+    expires_at: datetime
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class InviteRegister(BaseModel):
+    token: str
+    name: str = Field(min_length=2)
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+# ── Worker Reviews (client → worker) ──────────────────────────────────────────
+
+class WorkerReviewCreate(BaseModel):
+    worker_id: int
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class WorkerReviewUpdate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = Field(None, max_length=1000)
+
+
+class WorkerReviewOut(BaseModel):
+    id: int
+    client_id: int
+    client_name: Optional[str] = None
+    worker_id: int
+    worker_name: Optional[str] = None
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+    edited_at: Optional[datetime] = None
+    model_config = {"from_attributes": True}
+
+
+class WorkerReviewSummary(BaseModel):
+    """Aggregate rating stats for one worker, used in admin and client views."""
+    worker_id: int
+    worker_name: str
+    review_count: int
+    average_rating: Optional[float] = None
+    latest_review: Optional[WorkerReviewOut] = None
+

@@ -6,19 +6,16 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Attach JWT on every request — reads from Zustand persist (single source of truth)
 api.interceptors.request.use((config) => {
   const token = getToken()
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-// On 401, clear session and reload
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      // Import dynamically to avoid circular dependency at module load time
       import('../store/authStore').then(({ useAuthStore }) => {
         useAuthStore.getState().logout()
         window.location.href = '/login'
@@ -30,7 +27,6 @@ api.interceptors.response.use(
 
 export default api
 
-// Typed helpers
 export const authApi = {
   login: (email, password) => api.post('/auth/login', { email, password }),
   me: () => api.get('/auth/me'),
@@ -51,6 +47,14 @@ export const shiftsApi = {
   uploadScreenshot: (formData) => api.post('/shifts/upload-screenshot', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }),
+  checkinStatus: () => api.get('/shifts/check-ins/status'),
+  submitCheckin: (formData) => api.post('/shifts/check-in', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  adminToday: () => api.get('/shifts/admin/today'),
+  adminHistory: (params) => api.get('/shifts/admin/history', { params }),
+  unblock: (shiftId, reason) => api.post(`/shifts/${shiftId}/unblock`, null, { params: reason ? { reason } : {} }),
+  updateNote: (shiftId, workerNote) => api.patch(`/shifts/${shiftId}/note`, { worker_note: workerNote }),
 }
 
 export const activitiesApi = {
@@ -65,27 +69,16 @@ export const activitiesApi = {
 export const analyticsApi = {
   dashboard: () => api.get('/analytics/dashboard'),
   weekly: () => api.get('/analytics/weekly'),
-  /**
-   * Fetch a short-lived export token (60s), then trigger a file download
-   * via fetch+blob. This avoids putting the long-lived session JWT in a
-   * URL query param where it would appear in server logs and browser history.
-   */
   triggerExport: async (params) => {
-    // Step 1: get a short-lived export token via authenticated request
     const { data } = await api.get('/analytics/export-token')
-
-    // Step 2: build query string, filtering out undefined/empty values
     const clean = { export_token: data.export_token }
     if (params.fmt) clean.fmt = params.fmt
     if (params.verification_status) clean.verification_status = params.verification_status
     if (params.worker_id) clean.worker_id = params.worker_id
     if (params.date_from) clean.date_from = params.date_from
     if (params.date_to) clean.date_to = params.date_to
-
     const base = (import.meta.env.VITE_API_URL || '') + '/api/v1/analytics/export'
     const qs = new URLSearchParams(clean).toString()
-
-    // Step 3: fetch as blob to avoid CORS issues with window.open
     const resp = await fetch(`${base}?${qs}`)
     if (!resp.ok) throw new Error('Export failed')
     const blob = await resp.blob()
@@ -103,3 +96,54 @@ export const analyticsApi = {
 export const profileApi = {
   changePassword: (data) => api.post('/users/me/change-password', data),
 }
+
+export const applicationsApi = {
+  listAdmins: () => api.get('/applications/admins'),
+  submit: (data) => api.post('/applications', data),
+  list: () => api.get('/applications'),
+  approve: (id) => api.post(`/applications/${id}/approve`),
+  reject: (id) => api.post(`/applications/${id}/reject`),
+  pendingCount: () => api.get('/applications/pending-count'),
+}
+
+export const clientsApi = {
+  list: () => api.get('/clients'),
+  create: (data) => api.post('/clients', data),
+  assignWorkers: (id, workerIds) => api.patch(`/clients/${id}/workers`, { worker_ids: workerIds }),
+  delete: (id) => api.delete(`/clients/${id}`),
+  resetPassword: (id, newPassword) => api.post(`/clients/${id}/reset-password`, { new_password: newPassword }),
+  feed: () => api.get('/clients/me/feed'),
+  history: (params) => api.get('/clients/me/history', { params }),
+  submitReview: (workerId, rating, comment) => api.post('/clients/me/reviews', { worker_id: workerId, rating, comment }),
+  editReview: (reviewId, rating, comment) => api.patch(`/clients/me/reviews/${reviewId}`, { rating, comment }),
+  myReviews: () => api.get('/clients/me/reviews'),
+  reviewsAboutMe: () => api.get('/clients/reviews/me'),
+  teamReviews: (params) => api.get('/clients/reviews', { params }),
+  reviewSummary: () => api.get('/clients/reviews/summary'),
+}
+
+export const scheduleApi = {
+  window: () => api.get('/schedule/window'),
+  days: () => api.get('/schedule/days'),
+  updateDay: (dow, data) => api.put(`/schedule/days/${dow}`, data),
+  holidays: () => api.get('/schedule/holidays'),
+  addHoliday: (data) => api.post('/schedule/holidays', data),
+  deleteHoliday: (id) => api.delete(`/schedule/holidays/${id}`),
+}
+
+export const payrollApi = {
+  rates: () => api.get('/payroll/rates'),
+  upsertRate: (data) => api.post('/payroll/rates', data),
+  deleteRate: (dept) => api.delete(`/payroll/rates/${dept}`),
+  summary: (params) => api.get('/payroll/summary', { params }),
+  mySummary: (params) => api.get('/payroll/me/summary', { params }),
+}
+
+export const invitesApi = {
+  create: (emailHint) => api.post('/invites', { email_hint: emailHint || null }),
+  list: () => api.get('/invites'),
+  revoke: (id) => api.delete(`/invites/${id}`),
+  validate: (token) => api.get(`/invites/validate/${token}`),
+  register: (data) => api.post('/invites/register', data),
+}
+

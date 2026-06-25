@@ -3,21 +3,25 @@ import { useNavigate } from 'react-router-dom'
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
-import { useActivities, useWorkers, useDashboardStats, useToast } from '../../hooks'
+import { useActivities, useWorkers, useDashboardStats, useToast, usePendingApplicationsCount } from '../../hooks'
 import { fmtDate, fmtTime, fmtMinutes, getDuration, getErrorMessage } from '../../lib/utils'
-import { Avatar, Badge, Button, Card, Input, Textarea, Select, Toggle, Spinner, Alert, EmptyState, Divider, Modal, ToastContainer, Skeleton } from '../ui'
-import { analyticsApi } from '../../lib/api'
+import { Avatar, Badge, Button, Card, Input, Textarea, Select, Toggle, Spinner, Alert, EmptyState, Divider, Modal, ToastContainer, Skeleton, StarDisplay } from '../ui'
+import { analyticsApi, applicationsApi, clientsApi, usersApi, invitesApi } from '../../lib/api'
 import api from '../../lib/api'
-import { unsubscribeAll } from '../../lib/pushNotifications'
+import { unsubscribeAll, registerSW, requestAndSubscribe, isPushSubscribed } from '../../lib/pushNotifications'
 
 // ── Sidebar nav items ──────────────────────────────────────────────────────────
 const NAV = [
-  { id: 'overview', label: 'Overview',     icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z' },
-  { id: 'feed',     label: 'Activity Feed', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
-  { id: 'workers',  label: 'Workers',       icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
-  { id: 'attendance', label: 'Attendance',  icon: 'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v5l4 2' },
-  { id: 'payroll',  label: 'Payroll',      icon: 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
-  { id: 'settings', label: 'Settings',     icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
+  { id: 'overview',      label: 'Overview',      icon: 'M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z' },
+  { id: 'feed',          label: 'Activity Feed', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
+  { id: 'workers',       label: 'Workers',       icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75' },
+  { id: 'applications',  label: 'Applications',  icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11' },
+  { id: 'clients',       label: 'Clients',       icon: 'M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM12 12h.01M8 12h.01M16 12h.01' },
+  { id: 'attendance',    label: 'Attendance',    icon: 'M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm0 5v5l4 2' },
+  { id: 'reviews',       label: 'Reviews',       icon: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z' },
+  { id: 'payroll',       label: 'Payroll',       icon: 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
+  { id: 'invites',      label: 'Invites',       icon: 'M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71' },
+  { id: 'settings',      label: 'Settings',      icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
 ]
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
@@ -269,6 +273,11 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
   const [error, setError] = useState('')
   const set = (k) => (v) => setForm(f => ({ ...f, [k]: v }))
 
+  // Deactivation reason capture — only shown when suspending an active worker
+  const [deactivateTarget, setDeactivateTarget] = useState(null) // worker being suspended
+  const [deactivateReason, setDeactivateReason] = useState('')
+  const [deactivating, setDeactivating] = useState(false)
+
   const handleCreate = async () => {
     if (!form.name || !form.email || !form.password) { setError('Name, email and password are required'); return }
     if (form.password.length < 8) { setError('Password must be at least 8 characters'); return }
@@ -276,6 +285,28 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
     try { await onCreate(form); setShowModal(false); setForm({ name: '', email: '', password: '', role: 'worker', department: '' }) }
     catch (err) { setError(getErrorMessage(err)) }
     finally { setSaving(false) }
+  }
+
+  const handleToggleClick = (worker) => {
+    if (worker.is_active) {
+      // Suspending — collect a reason first
+      setDeactivateTarget(worker)
+      setDeactivateReason('')
+    } else {
+      // Reactivating — no reason needed
+      onToggle(worker.id, worker.is_active)
+    }
+  }
+
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return
+    setDeactivating(true)
+    try {
+      await onToggle(deactivateTarget.id, deactivateTarget.is_active, deactivateReason.trim() || null)
+      setDeactivateTarget(null)
+    } finally {
+      setDeactivating(false)
+    }
   }
 
   return (
@@ -307,13 +338,18 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
               <div style={{ fontSize: 11, color: 'var(--text3)', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <span>{w.department || 'No department'}</span>
                 <span style={{ fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.email}</span>
+                {!w.is_active && w.deactivated_reason && (
+                  <span style={{ color: 'var(--rose)', fontStyle: 'italic' }}>
+                    Suspended: {w.deactivated_reason}
+                  </span>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
               <Badge status={w.is_active ? 'active' : 'suspended'} />
               <div style={{ display: 'flex', gap: 6 }}>
-                <Toggle checked={w.is_active} onChange={() => onToggle(w.id, w.is_active)} />
-                <Button variant="danger" size="sm" onClick={() => { if (confirm(`Delete ${w.name}?`)) onDelete(w.id) }}>Remove</Button>
+                <Toggle checked={w.is_active} onChange={() => handleToggleClick(w)} />
+                <Button variant="danger" size="sm" onClick={() => { if (confirm(`Permanently delete ${w.name}? This removes all their shift and activity history and cannot be undone. Consider suspending instead if you just want to revoke access.`)) onDelete(w.id) }}>Remove</Button>
               </div>
             </div>
           </div>
@@ -332,6 +368,28 @@ function WorkersPanel({ workers, loading, onCreate, onToggle, onDelete }) {
             <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
             <Button variant="primary" onClick={handleCreate} disabled={saving}>
               {saving ? <><Spinner size={13} color="#fff" /> Creating…</> : 'Create Account'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!deactivateTarget} onClose={() => setDeactivateTarget(null)} title={`Suspend ${deactivateTarget?.name || ''}`}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ fontSize: 13, color: 'var(--text3)', lineHeight: 1.5 }}>
+            This revokes their access and closes out any shift they're currently clocked into.
+            Their shift and payroll history is kept. Add a reason for the record (optional, but recommended).
+          </div>
+          <Textarea
+            label="Reason (optional)"
+            value={deactivateReason}
+            onChange={e => setDeactivateReason(e.target.value)}
+            placeholder="e.g. Contract ended, performance, no longer needed…"
+            rows={3}
+          />
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button variant="secondary" onClick={() => setDeactivateTarget(null)}>Cancel</Button>
+            <Button variant="danger" onClick={confirmDeactivate} disabled={deactivating}>
+              {deactivating ? <><Spinner size={13} color="#fff" /> Suspending…</> : 'Suspend Worker'}
             </Button>
           </div>
         </div>
@@ -410,7 +468,7 @@ function PayrollPanel({ workers }) {
   const [loading, setLoading] = useState(true)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [rateForm, setRateForm] = useState({ department: '', amount: '', currency: 'USD' })
+  const [rateForm, setRateForm] = useState({ department: '', amount: '' })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
@@ -447,11 +505,10 @@ function PayrollPanel({ workers }) {
       await api.post('/payroll/rates', {
         department: rateForm.department,
         hourly_rate_cents: Math.round(parseFloat(rateForm.amount) * 100),
-        currency: rateForm.currency,
       })
       await loadRates()
       setSaved(true)
-      setRateForm(f => ({ department: '', amount: '', currency: f.currency }))
+      setRateForm({ department: '', amount: '' })
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
       setError(e.response?.data?.detail || 'Failed to save rate')
@@ -468,12 +525,22 @@ function PayrollPanel({ workers }) {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(cents / 100)
   }
 
-  const totalPayroll = payroll.reduce((s, w) => s + w.gross_pay_cents, 0)
+  // Group totals by currency — summing raw cents across different currencies
+  // under one label would silently misreport the total, so each currency gets its own line.
+  const totalsByCurrency = payroll.reduce((acc, w) => {
+    const cur = w.currency || 'USD'
+    acc[cur] = (acc[cur] || 0) + w.gross_pay_cents
+    return acc
+  }, {})
+  const currencyKeys = Object.keys(totalsByCurrency)
+  const totalPayrollDisplay = currencyKeys.length === 0
+    ? fmt(0, 'USD')
+    : currencyKeys.map(cur => fmt(totalsByCurrency[cur], cur)).join(' + ')
   const totalHours = payroll.reduce((s, w) => s + w.total_hours, 0)
   const totalTasks = payroll.reduce((s, w) => s + w.outlier_tasks_total, 0)
 
   return (
-    <div style={{ padding: '28px 24px', maxWidth: 800 }}>
+    <div className="page-pad" style={{ maxWidth: 800 }}>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Payroll</div>
       <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>Set hourly rates per department and view worker pay summaries.</div>
 
@@ -498,14 +565,17 @@ function PayrollPanel({ workers }) {
           </div>
           <div style={{ flex: '0 0 90px' }}>
             <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>CURRENCY</label>
-            <select value={rateForm.currency} onChange={e => setRateForm(f => ({ ...f, currency: e.target.value }))}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13 }}>
-              {['USD','EUR','GBP','NGN','GHS','KES','ZAR','CAD','AUD'].map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <div title="Set in Settings → Pay Currency" style={{
+              padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)',
+              background: 'var(--surface3)', color: 'var(--text3)', fontSize: 13, textAlign: 'center',
+            }}>{rates[0]?.currency || 'USD'}</div>
           </div>
           <Button variant="primary" onClick={saveRate} disabled={saving} style={{ height: 38, flexShrink: 0 }}>
             {saving ? <><Spinner size={12} color="#fff" /> Saving…</> : saved ? '✓ Saved' : 'Set Rate'}
           </Button>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 10 }}>
+          Currency applies to your whole team — change it in <strong>Settings → Pay Currency</strong>.
         </div>
 
         {/* Current rates table */}
@@ -545,13 +615,13 @@ function PayrollPanel({ workers }) {
       {/* Summary chips */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
         {[
-          { label: 'Total Payroll', value: fmt(totalPayroll, payroll[0]?.currency || rates[0]?.currency || 'USD'), color: 'var(--emerald)' },
+          { label: 'Total Payroll', value: totalPayrollDisplay, color: 'var(--emerald)', wide: currencyKeys.length > 1 },
           { label: 'Total Hours', value: `${totalHours.toFixed(1)}h`, color: 'var(--primary)' },
           { label: 'Outlier Tasks', value: totalTasks, color: 'var(--violet)' },
           { label: 'Workers', value: payroll.length, color: 'var(--text3)' },
         ].map(c => (
-          <div key={c.label} style={{ padding: '10px 18px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', textAlign: 'center', flex: '1 1 100px' }}>
-            <div style={{ fontSize: 20, fontWeight: 700, color: c.color, fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>{c.value}</div>
+          <div key={c.label} style={{ padding: '10px 18px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', textAlign: 'center', flex: c.wide ? '2 1 220px' : '1 1 100px' }}>
+            <div style={{ fontSize: c.wide ? 15 : 20, fontWeight: 700, color: c.color, fontFamily: 'var(--font-display)', fontStyle: 'italic', whiteSpace: c.wide ? 'normal' : 'nowrap' }}>{c.value}</div>
             <div style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{c.label}</div>
           </div>
         ))}
@@ -573,7 +643,16 @@ function PayrollPanel({ workers }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Avatar name={w.worker_name} size={36} />
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{w.worker_name}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {w.worker_name}
+                  {!w.is_active && (
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color: 'var(--text3)',
+                      background: 'var(--surface2)', border: '1px solid var(--border)',
+                      borderRadius: 'var(--r-full)', padding: '1px 8px',
+                    }}>Deactivated</span>
+                  )}
+                </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)' }}>{w.department || 'No department'}</div>
               </div>
             </div>
@@ -606,12 +685,566 @@ function PayrollPanel({ workers }) {
   )
 }
 
+// ── Applications Panel ────────────────────────────────────────────────────────
+function ReviewsPanel() {
+  const [summary, setSummary] = useState([])
+  const [reviews, setReviews] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [filterWorker, setFilterWorker] = useState(null)
+
+  const load = async () => {
+    setLoading(true); setError('')
+    try {
+      const [{ data: summaryData }, { data: reviewData }] = await Promise.all([
+        clientsApi.reviewSummary(),
+        clientsApi.teamReviews(filterWorker ? { worker_id: filterWorker } : undefined),
+      ])
+      setSummary(summaryData)
+      setReviews(reviewData)
+    } catch {
+      setError('Failed to load reviews')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [filterWorker])
+
+  return (
+    <div>
+      <div style={{ fontSize: 22, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 3 }}>Reviews</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>What clients are saying about your team.</div>
+
+      {error && <div style={{ color: 'var(--rose)', fontSize: 13, marginBottom: 16 }}>{error}</div>}
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[...Array(3)].map((_, i) => <Skeleton key={i} height={64} />)}
+        </div>
+      ) : (
+        <>
+          {/* Per-worker average rating leaderboard */}
+          {summary.length > 0 && (
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', marginBottom: 24, paddingBottom: 4 }}>
+              {summary.map(s => (
+                <button key={s.worker_id} onClick={() => setFilterWorker(filterWorker === s.worker_id ? null : s.worker_id)} style={{
+                  flexShrink: 0, minWidth: 150, textAlign: 'left', padding: '14px 16px',
+                  background: filterWorker === s.worker_id ? 'var(--primary-s)' : 'var(--surface)',
+                  border: `1px solid ${filterWorker === s.worker_id ? 'var(--primary)' : 'var(--border)'}`,
+                  borderRadius: 'var(--r-lg)', cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.worker_name}</div>
+                  {s.average_rating != null ? (
+                    <>
+                      <StarDisplay rating={Math.round(s.average_rating)} size={13} />
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>{s.average_rating} avg · {s.review_count} review{s.review_count !== 1 ? 's' : ''}</div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>No reviews yet</div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {filterWorker && (
+            <Button variant="ghost" size="sm" onClick={() => setFilterWorker(null)} style={{ marginBottom: 12 }}>
+              ← Show all workers
+            </Button>
+          )}
+
+          {/* Review list */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+            {reviews.length === 0 ? (
+              <EmptyState icon="⭐" title="No reviews yet" sub="Reviews clients leave for your workers will show up here." />
+            ) : reviews.map((r, i) => (
+              <div key={r.id} style={{
+                padding: '16px 20px',
+                borderBottom: i < reviews.length - 1 ? '1px solid var(--border)' : 'none',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Avatar name={r.worker_name} size={32} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.worker_name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>rated by {r.client_name}</div>
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <StarDisplay rating={r.rating} />
+                    <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                      {new Date(r.created_at).toLocaleDateString([], { day: 'numeric', month: 'short' })}
+                      {r.edited_at && ' · edited'}
+                    </div>
+                  </div>
+                </div>
+                {r.comment && (
+                  <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.5, paddingLeft: 42 }}>{r.comment}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function ApplicationsPanel({ onActioned }) {
+  const [apps, setApps] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try { const { data } = await applicationsApi.list(); setApps(data) }
+    catch { setError('Failed to load applications') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handle = async (id, action) => {
+    setActing(id); setError('')
+    try {
+      if (action === 'approve') await applicationsApi.approve(id)
+      else await applicationsApi.reject(id)
+      await load()
+      onActioned?.()
+    } catch (e) { setError(e.response?.data?.detail || 'Action failed') }
+    finally { setActing(null) }
+  }
+
+  const pending = apps.filter(a => a.status === 'pending')
+  const reviewed = apps.filter(a => a.status !== 'pending')
+
+  return (
+    <div className="page-pad" style={{ maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ fontSize: 22, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 4 }}>Applications</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
+        People who applied to join your team. Approve to activate their account, reject to decline.
+      </div>
+      {error && <Alert type="error" style={{ marginBottom: 16 }}>{error}</Alert>}
+      {loading ? <Spinner /> : apps.length === 0 ? (
+        <EmptyState icon="📋" title="No applications yet" sub="Share your team link at /apply so candidates can apply." />
+      ) : (
+        <>
+          {pending.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--amber)', fontFamily: 'var(--font-mono)', marginBottom: 12 }}>
+                ⏳ Pending ({pending.length})
+              </div>
+              {pending.map(a => (
+                <Card key={a.id} style={{ marginBottom: 12, padding: '18px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+                    <Avatar name={a.full_name} size={44} />
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{a.full_name}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text3)' }}>{a.email}{a.phone ? ` · ${a.phone}` : ''}</div>
+                      {a.cover_letter && (
+                        <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 8, lineHeight: 1.6,
+                          background: 'var(--surface2)', padding: '10px 14px', borderRadius: 8, maxWidth: 480 }}>
+                          {a.cover_letter}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>
+                        Applied {new Date(a.applied_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <Button variant="primary" size="sm" disabled={acting === a.id} onClick={() => handle(a.id, 'approve')}>
+                        {acting === a.id ? <Spinner size={12} color="#fff" /> : '✓ Approve'}
+                      </Button>
+                      <Button variant="danger" size="sm" disabled={acting === a.id} onClick={() => handle(a.id, 'reject')}>
+                        ✕ Reject
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </>
+          )}
+          {reviewed.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5,
+                color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 12, marginTop: pending.length ? 28 : 0 }}>
+                Reviewed ({reviewed.length})
+              </div>
+              {reviewed.map(a => (
+                <Card key={a.id} style={{ marginBottom: 10, padding: '14px 20px', opacity: 0.7 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <Avatar name={a.full_name} size={36} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{a.full_name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)' }}>{a.email}</div>
+                    </div>
+                    <Badge status={a.status === 'approved' ? 'active' : 'suspended'}>
+                      {a.status === 'approved' ? '✓ Approved' : '✕ Rejected'}
+                    </Badge>
+                  </div>
+                </Card>
+              ))}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Clients Panel ─────────────────────────────────────────────────────────────
+function ClientsPanel({ workers }) {
+  const [clients, setClients] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [form, setForm] = useState({ name: '', email: '', password: '', worker_ids: [] })
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState('')
+  const [assigning, setAssigning]   = useState(null)
+  const [assignIds, setAssignIds]   = useState([])
+  const [resettingPw, setResettingPw] = useState(null)   // client id
+  const [newPw, setNewPw]             = useState('')
+  const [pwMsg, setPwMsg]             = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try { const { data } = await clientsApi.list(); setClients(data) }
+    catch { setError('Failed to load clients') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleCreate = async () => {
+    if (!form.name || !form.email || form.password.length < 8) {
+      setError('Name, email, and password (min 8 chars) are required'); return
+    }
+    setCreating(true); setError('')
+    try {
+      await clientsApi.create({ ...form, worker_ids: form.worker_ids })
+      setForm({ name: '', email: '', password: '', worker_ids: [] })
+      setShowCreate(false)
+      await load()
+    } catch (e) { setError(e.response?.data?.detail || 'Failed to create client') }
+    finally { setCreating(false) }
+  }
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this client account?')) return
+    try { await clientsApi.delete(id); await load() }
+    catch { setError('Failed to delete') }
+  }
+
+  const openAssign = (client) => {
+    const current = client.assigned_worker_ids || []
+    setAssigning(client.id)
+    setAssignIds(current)
+  }
+
+  const saveAssign = async () => {
+    try { await clientsApi.assignWorkers(assigning, assignIds); setAssigning(null); await load() }
+    catch { setError('Failed to update worker assignments') }
+  }
+
+  const saveResetPw = async () => {
+    if (newPw.length < 8) { setPwMsg('Password must be at least 8 characters'); return }
+    try {
+      await clientsApi.resetPassword(resettingPw, newPw)
+      setPwMsg('Password updated.')
+      setTimeout(() => { setResettingPw(null); setNewPw(''); setPwMsg('') }, 1500)
+    } catch (e) { setPwMsg(e.response?.data?.detail || 'Failed to reset password') }
+  }
+
+  const toggleWorker = (id) =>
+    setAssignIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
+
+  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-sans)' }
+
+  return (
+    <div className="page-pad" style={{ maxWidth: 860, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 22, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 4 }}>Clients</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)' }}>Create client accounts and assign which workers they can see.</div>
+        </div>
+        <Button variant="primary" onClick={() => setShowCreate(s => !s)}>
+          {showCreate ? 'Cancel' : '+ New Client'}
+        </Button>
+      </div>
+
+      {error && <Alert type="error" style={{ marginBottom: 16 }}>{error}</Alert>}
+
+      {showCreate && (
+        <Card style={{ marginBottom: 24, padding: '20px 24px' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>New Client Account</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 5 }}>Full Name</label>
+              <input style={inputStyle} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Client name" />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 5 }}>Email</label>
+              <input style={inputStyle} type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="client@company.com" />
+            </div>
+          </div>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 5 }}>Password</label>
+            <input style={inputStyle} type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min. 8 characters" />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 8 }}>Assign Workers (optional)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {workers.filter(w => w.is_active).map(w => {
+                const sel = form.worker_ids.includes(w.id)
+                return (
+                  <button key={w.id} onClick={() => setForm(f => ({
+                    ...f, worker_ids: sel ? f.worker_ids.filter(x => x !== w.id) : [...f.worker_ids, w.id]
+                  }))} style={{
+                    padding: '5px 12px', borderRadius: 100, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                    border: sel ? '1.5px solid var(--primary)' : '1.5px solid var(--border)',
+                    background: sel ? 'var(--primary-s)' : 'transparent',
+                    color: sel ? 'var(--primary)' : 'var(--text3)',
+                    fontFamily: 'var(--font-sans)',
+                  }}>{w.name}</button>
+                )
+              })}
+              {workers.filter(w => w.is_active).length === 0 && (
+                <div style={{ fontSize: 13, color: 'var(--text3)' }}>No active workers yet.</div>
+              )}
+            </div>
+          </div>
+          <Button variant="primary" onClick={handleCreate} disabled={creating}>
+            {creating ? <><Spinner size={12} color="#fff" /> Creating…</> : 'Create Client'}
+          </Button>
+        </Card>
+      )}
+
+      {loading ? <Spinner /> : clients.length === 0 ? (
+        <EmptyState icon="💼" title="No clients yet" sub="Create a client account above and assign which workers they can monitor." />
+      ) : (
+        clients.map(client => (
+          <Card key={client.id} style={{ marginBottom: 12, padding: '18px 22px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <Avatar name={client.name} size={42} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{client.name}</div>
+                <div style={{ fontSize: 13, color: 'var(--text3)' }}>{client.email}</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
+                  {client.assigned_worker_ids?.length || 0} worker{(client.assigned_worker_ids?.length || 0) !== 1 ? 's' : ''} assigned
+                </div>
+                {client.admin_name && (
+                  <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    Managed by <strong style={{ color: 'var(--text2)', fontWeight: 600 }}>{client.admin_name}</strong>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button variant="secondary" size="sm" onClick={() => openAssign(client)}>Edit Workers</Button>
+                <Button variant="secondary" size="sm" onClick={() => { setResettingPw(client.id); setNewPw(''); setPwMsg('') }}>Reset Password</Button>
+                <Button variant="danger" size="sm" onClick={() => handleDelete(client.id)}>Delete</Button>
+              </div>
+            </div>
+
+            {assigning === client.id && (
+              <div style={{ marginTop: 16, padding: '14px 16px', background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>Select workers this client can see:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+                  {workers.filter(w => w.is_active).map(w => {
+                    const sel = assignIds.includes(w.id)
+                    return (
+                      <button key={w.id} onClick={() => toggleWorker(w.id)} style={{
+                        padding: '5px 12px', borderRadius: 100, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                        border: sel ? '1.5px solid var(--primary)' : '1.5px solid var(--border)',
+                        background: sel ? 'var(--primary-s)' : 'transparent',
+                        color: sel ? 'var(--primary)' : 'var(--text3)',
+                        fontFamily: 'var(--font-sans)',
+                      }}>{w.name}</button>
+                    )
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="primary" size="sm" onClick={saveAssign}>Save</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setAssigning(null)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        ))
+      )}
+
+      {/* Assign-workers modal */}
+    </div>
+  )
+}
+
+// ── Invite Panel ──────────────────────────────────────────────────────────────
+function InvitePanel() {
+  const [invites, setInvites]     = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [emailHint, setEmailHint] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [copiedId, setCopiedId]   = useState(null)
+  const [error, setError]         = useState('')
+
+  const BASE_URL = window.location.origin
+
+  const load = async () => {
+    setLoading(true)
+    try { const { data } = await invitesApi.list(); setInvites(data) }
+    catch { setError('Failed to load invites') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const generate = async () => {
+    setGenerating(true); setError('')
+    try {
+      await invitesApi.create(emailHint.trim() || null)
+      setEmailHint('')
+      await load()
+    } catch (e) { setError(e.response?.data?.detail || 'Failed to generate invite') }
+    finally { setGenerating(false) }
+  }
+
+  const revoke = async (id) => {
+    try { await invitesApi.revoke(id); await load() }
+    catch (e) { setError(e.response?.data?.detail || 'Failed to revoke') }
+  }
+
+  const copyLink = (token, id) => {
+    const url = `${BASE_URL}/register?token=${token}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
+
+  const isExpired = (invite) => new Date(invite.expires_at) < new Date()
+
+  const active   = invites.filter(i => !i.used && !isExpired(i))
+  const inactive = invites.filter(i => i.used || isExpired(i))
+
+  const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-sans)', outline: 'none' }
+
+  return (
+    <div className="page-pad" style={{ maxWidth: 680, margin: '0 auto' }}>
+      <div style={{ fontSize: 22, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 4 }}>Invite Admins</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>
+        Generate a one-time invite link to onboard another administrator. Each link expires after 72 hours and can only be used once.
+      </div>
+
+      {error && <Alert type="error" style={{ marginBottom: 16 }}>{error}</Alert>}
+
+      {/* Generate form */}
+      <Card style={{ marginBottom: 28, padding: '20px 22px' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>Generate Invite Link</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label style={{ fontSize: 11, color: 'var(--text3)', display: 'block', marginBottom: 6, fontFamily: 'var(--font-mono)', letterSpacing: 0.4 }}>
+              EMAIL HINT (optional — pre-fills recipient's email)
+            </label>
+            <input
+              style={inputStyle}
+              type="email"
+              value={emailHint}
+              onChange={e => setEmailHint(e.target.value)}
+              placeholder="newadmin@company.com"
+              onFocus={e => e.target.style.borderColor = 'var(--primary)'}
+              onBlur={e => e.target.style.borderColor = 'var(--border)'}
+            />
+          </div>
+          <Button variant="primary" onClick={generate} disabled={generating}>
+            {generating ? <><Spinner size={12} color="#fff" /> Generating…</> : 'Generate Link'}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Active invites */}
+      {loading ? <Spinner /> : (
+        <>
+          {active.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--emerald)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
+                Active · {active.length}
+              </div>
+              {active.map(inv => {
+                const link = `${BASE_URL}/register?token=${inv.token}`
+                const expiresIn = Math.ceil((new Date(inv.expires_at) - new Date()) / 3600000)
+                return (
+                  <Card key={inv.id} style={{ marginBottom: 10, padding: '16px 18px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {inv.email_hint && (
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>{inv.email_hint}</div>
+                        )}
+                        <div style={{
+                          fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>{link}</div>
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, fontWeight: 500 }}>
+                          Expires in {expiresIn}h
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <Button variant="secondary" size="sm" onClick={() => copyLink(inv.token, inv.id)}>
+                          {copiedId === inv.id ? 'Copied' : 'Copy Link'}
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => revoke(inv.id)}>Revoke</Button>
+                      </div>
+                    </div>
+                  </Card>
+                )
+              })}
+            </>
+          )}
+
+          {active.length === 0 && inactive.length === 0 && (
+            <EmptyState icon={
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+            } title="No invites yet" sub="Generate a link above to invite another admin." />
+          )}
+
+          {inactive.length > 0 && (
+            <div style={{ marginTop: active.length ? 24 : 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
+                Used / Expired · {inactive.length}
+              </div>
+              {inactive.map(inv => (
+                <Card key={inv.id} style={{ marginBottom: 8, padding: '13px 18px', opacity: 0.55 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {inv.email_hint && <div style={{ fontSize: 13, fontWeight: 500 }}>{inv.email_hint}</div>}
+                      <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {new Date(inv.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <Badge status={inv.used ? 'active' : 'suspended'}>
+                      {inv.used ? 'Used' : 'Expired'}
+                    </Badge>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Settings Panel ────────────────────────────────────────────────────────────
 function SettingsPanel() {
   const [schedule, setSchedule] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [form, setForm] = useState({ clock_in_deadline_hour: 9, clock_in_deadline_minute: 0, checkin_interval_minutes: 120, grace_period_minutes: 15 })
+  const [form, setForm] = useState({ clock_in_deadline_hour: 9, clock_in_deadline_minute: 0, checkin_interval_minutes: 120, grace_period_minutes: 15, currency: 'USD' })
 
   useEffect(() => {
     api.get('/shifts/schedule').then(r => {
@@ -632,7 +1265,7 @@ function SettingsPanel() {
   if (!schedule) return <div style={{ padding: 32 }}><Skeleton height={200} /></div>
 
   return (
-    <div style={{ padding: '28px 24px', maxWidth: 520 }}>
+    <div className="page-pad" style={{ maxWidth: 520 }}>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Work Schedule Settings</div>
       <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 28 }}>Configure punctuality rules and check-in intervals for all workers.</div>
 
@@ -676,6 +1309,18 @@ function SettingsPanel() {
           style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-mono)' }} />
         <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
           Workers who clock in within <strong>{form.grace_period_minutes} minutes</strong> after the deadline are flagged late but not blocked.
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>💱 Pay Currency</div>
+        <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>CURRENCY USED FOR ALL PAYROLL</label>
+        <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 14 }}>
+          {['USD','EUR','GBP','NGN','GHS','KES','ZAR','CAD','AUD'].map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+          One currency for the whole team — applies to every department rate and every worker's pay summary. Changing this updates how existing rates are displayed; rate amounts themselves don't convert.
         </div>
       </Card>
 
@@ -886,7 +1531,7 @@ function AttendancePanel({ workers }) {
   const totalTasks = (s) => s.check_ins?.reduce((a, c) => a + (c.outlier_tasks_completed || 0), 0) || 0
 
   return (
-    <div style={{ padding: '28px 24px' }}>
+    <div className="page-pad">
       {/* FIX: Lightbox */}
       {lightboxUrl && (
         <>
@@ -1026,6 +1671,12 @@ function AttendancePanel({ workers }) {
               </div>
             )}
 
+            {s.worker_note && (
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--surface2)', borderRadius: 'var(--r)', fontSize: 12, color: 'var(--text2)', borderLeft: '3px solid var(--violet)' }}>
+                <span style={{ fontWeight: 600, color: 'var(--violet)' }}>Worker's note: </span>{s.worker_note}
+              </div>
+            )}
+
             {/* Final shift screenshot — always visible when present, independent of check-ins */}
             {s.screenshot_url && (
               <div style={{ marginTop: 10, background: 'var(--surface2)', borderRadius: 'var(--r)', border: '1px solid var(--violet-b)', padding: '10px 12px' }}>
@@ -1116,6 +1767,33 @@ export default function AdminDashboard() {
   const { workers, loading: workerLoading, create, toggleActive, remove } = useWorkers()
   const { stats, weekly, loading: statsLoading } = useDashboardStats()
   const { toasts, toast, removeToast } = useToast()
+  const { count: pendingApps, refetch: refetchPendingApps } = usePendingApplicationsCount()
+
+  // ── Push notifications (new application alerts) ──────────────────────────
+  const [pushEnabled, setPushEnabled] = useState(false)
+  const [pushLoading, setPushLoading] = useState(false)
+
+  useEffect(() => {
+    registerSW()
+    isPushSubscribed().then(setPushEnabled)
+  }, [])
+
+  const handleTogglePush = async () => {
+    setPushLoading(true)
+    try {
+      if (pushEnabled) {
+        await unsubscribeAll()
+        setPushEnabled(false)
+        toast('Notifications disabled')
+      } else {
+        const ok = await requestAndSubscribe()
+        setPushEnabled(ok)
+        toast(ok ? 'Notifications enabled — you\'ll be alerted on new applications' : 'Could not enable notifications. Check your browser settings.', ok ? 'success' : 'error')
+      }
+    } finally {
+      setPushLoading(false)
+    }
+  }
 
   const pending = activities.filter(a => a.verification_status === 'pending').length
 
@@ -1129,8 +1807,8 @@ export default function AdminDashboard() {
     toast('Worker account created')
   }
 
-  const handleToggleWorker = async (id, isActive) => {
-    await toggleActive(id, isActive)
+  const handleToggleWorker = async (id, isActive, reason) => {
+    await toggleActive(id, isActive, reason)
     toast(isActive ? 'Account suspended' : 'Account activated')
   }
 
@@ -1219,6 +1897,9 @@ export default function AdminDashboard() {
                 {sidebarOpen && item.id === 'feed' && pending > 0 && (
                   <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'var(--amber)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{pending}</span>
                 )}
+                {sidebarOpen && item.id === 'applications' && pendingApps > 0 && (
+                  <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'var(--rose)', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{pendingApps}</span>
+                )}
               </button>
             )
           })}
@@ -1244,18 +1925,21 @@ export default function AdminDashboard() {
       {/* Main */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* Top bar */}
-        <div style={{ height: 54, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', background: 'var(--surface)', flexShrink: 0, position: 'relative', zIndex: 20 }}>
-          <button onClick={() => setSidebarOpen(s => !s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 4, borderRadius: 'var(--r-sm)' }}>
+        <div className="topbar-pad" style={{ height: 54, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--surface)', flexShrink: 0, position: 'relative', zIndex: 20 }}>
+          <button onClick={() => setSidebarOpen(s => !s)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', padding: 4, borderRadius: 'var(--r-sm)', flexShrink: 0 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
-          <div style={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{NAV.find(n => n.id === tab)?.label}</div>
+          <div style={{ flex: 1, fontSize: 15, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{NAV.find(n => n.id === tab)?.label}</div>
           {pending > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 'var(--r-full)', background: 'var(--amber-s)', border: '1px solid var(--amber-b)', color: 'var(--amber)', fontSize: 12, fontWeight: 500 }}>
+            <div title={`${pending} pending`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 'var(--r-full)', background: 'var(--amber-s)', border: '1px solid var(--amber-b)', color: 'var(--amber)', fontSize: 12, fontWeight: 500, flexShrink: 0 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              {pending} pending
+              <span className="topbar-label">{pending} pending</span>
             </div>
           )}
-          <button onClick={toggleTheme} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, display: 'flex', borderRadius: 'var(--r-sm)' }}>
+          <button onClick={handleTogglePush} disabled={pushLoading} title={pushEnabled ? 'Disable new-application notifications' : 'Enable new-application notifications'} style={{ background: 'none', border: 'none', cursor: pushLoading ? 'wait' : 'pointer', color: pushEnabled ? 'var(--primary)' : 'var(--text3)', padding: 6, display: 'flex', borderRadius: 'var(--r-sm)', flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill={pushEnabled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </button>
+          <button onClick={toggleTheme} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, display: 'flex', borderRadius: 'var(--r-sm)', flexShrink: 0 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               {dark ? <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/> : <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>}
             </svg>
@@ -1263,7 +1947,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+        <div className="content-pad" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
 
           {/* OVERVIEW */}
           {tab === 'overview' && (
@@ -1370,11 +2054,15 @@ export default function AdminDashboard() {
       {drawer && <VerifyDrawer activity={drawer} onClose={() => setDrawer(null)} onVerify={handleVerify} />}
 
       {/* Settings & Attendance panels rendered as full-page overlays over main content */}
-      {(tab === 'settings' || tab === 'attendance' || tab === 'payroll') && (
+      {(tab === 'settings' || tab === 'attendance' || tab === 'payroll' || tab === 'applications' || tab === 'clients' || tab === 'invites') && (
         <div style={{ position: 'fixed', top: 54, right: 0, bottom: 0, left: sidebarWidth, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
-          {tab === 'settings' && <SettingsPanel />}
-          {tab === 'attendance' && <AttendancePanel workers={workers} />}
-          {tab === 'payroll' && <PayrollPanel workers={workers} />}
+          {tab === 'settings'      && <SettingsPanel />}
+          {tab === 'attendance'    && <AttendancePanel workers={workers} />}
+          {tab === 'payroll'       && <PayrollPanel workers={workers} />}
+          {tab === 'applications'  && <ApplicationsPanel onActioned={refetchPendingApps} />}
+          {tab === 'reviews'       && <ReviewsPanel />}
+          {tab === 'clients'       && <ClientsPanel workers={workers} />}
+          {tab === 'invites'       && <InvitePanel />}
         </div>
       )}
 

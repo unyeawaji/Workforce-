@@ -2,7 +2,7 @@ import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime,
-    ForeignKey, Text, Enum as SAEnum, Date, Time,
+    ForeignKey, Text, Enum as SAEnum, Date, Time, UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -11,6 +11,7 @@ from app.db.database import Base
 class UserRole(str, enum.Enum):
     admin = "admin"
     worker = "worker"
+    client = "client"
 
 
 class ActivityStatus(str, enum.Enum):
@@ -20,6 +21,12 @@ class ActivityStatus(str, enum.Enum):
 
 
 class VerificationStatus(str, enum.Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class ApplicationStatus(str, enum.Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
@@ -41,12 +48,60 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     client_name = Column(String(200), nullable=True)   # saved client — pre-filled at clock-in
     created_at = Column(DateTime(timezone=True), default=_now)
+    # Offboarding audit trail — set when an admin deactivates this user
+    deactivated_reason = Column(String(500), nullable=True)
+    deactivated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Siloing: workers and clients belong to one admin.
+    # NULL for admin rows (admins are top-level).
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     activities = relationship("Activity", back_populates="worker",
                               foreign_keys="Activity.worker_id", cascade="all, delete-orphan")
     shifts = relationship("Shift", back_populates="worker", cascade="all, delete-orphan")
     check_ins = relationship("CheckIn", back_populates="worker", cascade="all, delete-orphan")
     push_subscriptions = relationship("PushSubscription", back_populates="worker", cascade="all, delete-orphan")
+
+    # Workers assigned to this client (through ClientWorker join table)
+    assigned_workers = relationship("ClientWorker", foreign_keys="ClientWorker.client_id",
+                                    back_populates="client", cascade="all, delete-orphan")
+
+
+class ClientWorker(Base):
+    """Many-to-many: which workers a client can see."""
+    __tablename__ = "client_workers"
+    __table_args__ = (UniqueConstraint("client_id", "worker_id", name="uq_client_worker"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    worker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+    client = relationship("User", foreign_keys=[client_id], back_populates="assigned_workers")
+    worker = relationship("User", foreign_keys=[worker_id])
+
+
+class JobApplication(Base):
+    """Public job applications — become inactive worker accounts on submit."""
+    __tablename__ = "job_applications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # FK to the User row auto-created for this applicant (is_active=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    # Which admin they applied to (chosen in dropdown on apply page)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    full_name = Column(String(150), nullable=False)
+    email = Column(String(255), nullable=False)
+    phone = Column(String(50), nullable=True)
+    cover_letter = Column(Text, nullable=True)
+    status = Column(SAEnum(ApplicationStatus), nullable=False, default=ApplicationStatus.pending)
+    applied_at = Column(DateTime(timezone=True), default=_now)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    applicant = relationship("User", foreign_keys=[user_id])
+    admin = relationship("User", foreign_keys=[admin_id])
+    reviewer = relationship("User", foreign_keys=[reviewed_by])
 
 
 class WorkSchedule(Base):
@@ -58,6 +113,7 @@ class WorkSchedule(Base):
     clock_in_deadline_minute = Column(Integer, default=0)
     checkin_interval_minutes = Column(Integer, default=120)
     grace_period_minutes = Column(Integer, default=15)
+    currency = Column(String(10), default="USD", nullable=False)  # single source of truth for all pay
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
@@ -95,13 +151,13 @@ class Shift(Base):
     clock_out = Column(DateTime(timezone=True), nullable=True)
     total_minutes = Column(Integer, nullable=True)
     screenshot_url = Column(String(500), nullable=True)
-
-    client_name = Column(String(200), nullable=True)   # which client the worker is working for
-
+    client_name = Column(String(200), nullable=True)
     is_late = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
     block_reason = Column(String(255), nullable=True)
     minutes_late = Column(Integer, nullable=True)
+    # Worker's own explanation for a late clock-in or missed/blocked shift
+    worker_note = Column(Text, nullable=True)
 
     worker = relationship("User", back_populates="shifts")
     check_ins = relationship("CheckIn", back_populates="shift", cascade="all, delete-orphan")
@@ -159,14 +215,13 @@ class Activity(Base):
 
 
 class PushSubscription(Base):
-    """Web Push subscription endpoint stored per worker device."""
     __tablename__ = "push_subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
     worker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     endpoint = Column(Text, nullable=False, unique=True)
-    p256dh = Column(Text, nullable=False)   # browser public key
-    auth = Column(Text, nullable=False)     # auth secret
+    p256dh = Column(Text, nullable=False)
+    auth = Column(Text, nullable=False)
     user_agent = Column(String(300), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
 
@@ -174,29 +229,53 @@ class PushSubscription(Base):
 
 
 class PushNotificationLog(Base):
-    """
-    Tracks which (shift, window_key) pairs have already been notified.
-    Persisting this in the DB means process restarts / Railway redeploys
-    do not cause duplicate push notifications within the same check-in window.
-    Rows older than 24h are pruned automatically by the scheduler.
-    """
     __tablename__ = "push_notification_log"
 
     id = Column(Integer, primary_key=True, index=True)
     shift_id = Column(Integer, ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False, index=True)
-    window_key = Column(String(32), nullable=False, index=True)   # "{shift_id}:{YYYYmmddTHHMM}"
+    window_key = Column(String(32), nullable=False, index=True)
     notified_at = Column(DateTime(timezone=True), default=_now, nullable=False)
 
 
 class UsedExportToken(Base):
-    """
-    BUG FIX: tracks consumed export JWTs so each token is truly single-use.
-    jti is a UUID stored at token creation; verify_export_token checks this table
-    and rejects any token whose jti already appears here.
-    Rows are pruned on a schedule (anything older than 5 minutes is safe to drop).
-    """
     __tablename__ = "used_export_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
     jti = Column(String(64), unique=True, nullable=False, index=True)
     used_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+
+class AdminInvite(Base):
+    """One-time invite tokens for creating new admin accounts."""
+    __tablename__ = "admin_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email_hint = Column(String(255), nullable=True)   # optional — pre-fill email on register page
+    used = Column(Boolean, default=False, nullable=False)
+    used_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    used_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+    creator = relationship("User", foreign_keys=[created_by])
+    redeemer = relationship("User", foreign_keys=[used_by])
+
+
+class WorkerReview(Base):
+    """A client's star rating + comment about one of their assigned workers."""
+    __tablename__ = "worker_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    worker_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    rating = Column(Integer, nullable=False)          # 1-5
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_now)
+    edited_at = Column(DateTime(timezone=True), nullable=True)  # set when the client revises rating/comment
+
+    client = relationship("User", foreign_keys=[client_id])
+    worker = relationship("User", foreign_keys=[worker_id])
+    admin = relationship("User", foreign_keys=[admin_id])
+

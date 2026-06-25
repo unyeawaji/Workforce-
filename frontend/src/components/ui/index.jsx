@@ -377,22 +377,39 @@ export function Modal({ open, onClose, title, children, maxWidth = 520 }) {
 export function ToastContainer({ toasts, onRemove }) {
   return (
     <div style={{
-      position: 'fixed', bottom: 24, right: 24, zIndex: 999,
-      display: 'flex', flexDirection: 'column', gap: 8,
+      position: 'fixed',
+      bottom: 'max(24px, env(safe-area-inset-bottom, 0px))',
+      right: 24, left: 24, zIndex: 999,
+      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8,
+      pointerEvents: 'none',
     }}>
       {toasts.map(t => (
         <div key={t.id} style={{
           padding: '12px 16px', borderRadius: 'var(--r)',
           background: t.type === 'error' ? 'var(--rose)' : 'var(--text)',
-          color: '#fff', fontSize: 13, fontWeight: 500, maxWidth: 320,
+          color: '#fff', fontSize: 13, fontWeight: 500,
+          width: '100%', maxWidth: 320, boxSizing: 'border-box',
           boxShadow: 'var(--shadow-lg)', animation: 'fadeUp 0.3s cubic-bezier(0.16,1,0.3,1)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
           borderLeft: `3px solid ${t.type === 'error' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.25)'}`,
+          pointerEvents: 'auto',
         }}>
           <span>{t.message}</span>
-          <button onClick={() => onRemove(t.id)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 16 }}>×</button>
+          <button onClick={() => onRemove(t.id)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
         </div>
       ))}
     </div>
+  )
+}
+
+// ── StarDisplay ───────────────────────────────────────────────────────────────
+// Read-only star rating (1-5), used wherever a review's rating needs to be shown
+// rather than edited. For an interactive, click-to-rate input, see ClientDashboard's
+// StarRating component instead — that one is specific to the review-submission flow.
+export function StarDisplay({ rating, size = 14 }) {
+  return (
+    <span style={{ fontSize: size, color: 'var(--amber)', letterSpacing: 1 }}>
+      {'★'.repeat(rating)}<span style={{ color: 'var(--border)' }}>{'★'.repeat(5 - rating)}</span>
+    </span>
   )
 }

@@ -24,7 +24,7 @@ Two key concepts:
 """
 from datetime import datetime, date, timedelta, timezone
 from sqlalchemy.orm import Session
-from app.models.models import DaySchedule, Holiday
+from app.models.models import DaySchedule, Holiday, WorkSchedule
 from app.schemas.schemas import WorkWindowStatus
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -45,6 +45,25 @@ def logical_today(now: datetime | None = None) -> date:
     if now.hour < SHIFT_BOUNDARY_HOUR:
         return (now - timedelta(days=1)).date()
     return now.date()
+
+
+def get_or_create_work_schedule(db: Session) -> WorkSchedule:
+    """
+    Single source of truth for fetching the admin-wide WorkSchedule singleton
+    (id=1). Creates it with defaults if it doesn't exist yet, so every caller
+    gets a real row back rather than having to separately handle a None case.
+
+    Previously this exact query — and, in two of three call sites, weaker
+    handling of the "row doesn't exist yet" case — was duplicated across
+    shifts.py, payroll.py, and scheduler.py.
+    """
+    s = db.query(WorkSchedule).filter(WorkSchedule.id == 1).first()
+    if not s:
+        s = WorkSchedule(id=1)
+        db.add(s)
+        db.commit()
+        db.refresh(s)
+    return s
 
 
 def seed_default_schedule(db: Session) -> None:

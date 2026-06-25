@@ -4,7 +4,7 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    APP_NAME: str = "AİİИDUCTION"
+    APP_NAME: str = "AI Induction"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 

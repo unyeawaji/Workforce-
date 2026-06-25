@@ -1,102 +1,106 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Geist+Mono:wght@400;500&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   --font-display: 'Instrument Serif', Georgia, serif;
-  --font-sans: 'Geist', system-ui, sans-serif;
-  --font-mono: 'Geist Mono', monospace;
+  --font-sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'Geist Mono', 'JetBrains Mono', monospace;
 
-  --bg: #f8f7f4;
-  --bg2: #f0eeea;
-  --surface: #ffffff;
-  --surface2: #f8f7f4;
-  --surface3: #ece9e3;
-  --border: #e4e1db;
-  --border2: #d4d0c8;
-  --text: #1a1814;
-  --text2: #4a4640;
-  --text3: #8a857d;
+  /* Light theme */
+  --bg:       #f5f6f8;
+  --bg2:      #eceef2;
+  --surface:  #ffffff;
+  --surface2: #f5f6f8;
+  --surface3: #e8eaee;
+  --border:   #e2e5ea;
+  --border2:  #cdd1d8;
+  --text:     #0f1117;
+  --text2:    #3d4452;
+  --text3:    #7b8394;
 
-  --primary: #1d4ed8;
+  --primary:   #1d4ed8;
   --primary-h: #1e40af;
   --primary-s: #eff6ff;
   --primary-b: #bfdbfe;
 
-  --emerald: #059669;
+  --emerald:   #059669;
   --emerald-s: #ecfdf5;
   --emerald-b: #a7f3d0;
 
-  --amber: #d97706;
+  --amber:   #d97706;
   --amber-s: #fffbeb;
   --amber-b: #fde68a;
 
-  --rose: #e11d48;
+  --rose:   #e11d48;
   --rose-s: #fff1f2;
   --rose-b: #fecdd3;
 
-  --violet: #7c3aed;
+  --violet:   #7c3aed;
   --violet-s: #f5f3ff;
   --violet-b: #ddd6fe;
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
-  --shadow-lg: 0 20px 48px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.06);
-  --shadow-xl: 0 32px 64px rgba(0,0,0,0.14), 0 8px 24px rgba(0,0,0,0.08);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow:    0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-lg: 0 20px 48px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-xl: 0 32px 64px rgba(0,0,0,0.13), 0 8px 24px rgba(0,0,0,0.07);
 
-  --r-sm: 6px;
-  --r: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
+  --r-sm:  5px;
+  --r:     10px;
+  --r-lg:  14px;
+  --r-xl:  20px;
   --r-full: 9999px;
 }
 
 [data-theme="dark"] {
-  --bg: #0d0d0f;
-  --bg2: #111114;
-  --surface: #16161a;
-  --surface2: #1c1c21;
-  --surface3: #222228;
-  --border: #2a2a32;
-  --border2: #36363f;
-  --text: #f0eff4;
-  --text2: #b0afc0;
-  --text3: #6a6878;
+  --bg:      #09090b;
+  --bg2:     #0f0f12;
+  --surface: #141418;
+  --surface2:#1a1a20;
+  --surface3:#222229;
+  --border:  #28282f;
+  --border2: #35353e;
+  --text:    #f0f0f5;
+  --text2:   #a8a8b8;
+  --text3:   #60606e;
 
-  --primary: #3b82f6;
+  --primary:   #3b82f6;
   --primary-h: #60a5fa;
-  --primary-s: rgba(59,130,246,0.1);
-  --primary-b: rgba(59,130,246,0.25);
+  --primary-s: rgba(59,130,246,0.10);
+  --primary-b: rgba(59,130,246,0.22);
 
-  --emerald: #10b981;
-  --emerald-s: rgba(16,185,129,0.1);
-  --emerald-b: rgba(16,185,129,0.25);
+  --emerald:   #10b981;
+  --emerald-s: rgba(16,185,129,0.10);
+  --emerald-b: rgba(16,185,129,0.22);
 
-  --amber: #f59e0b;
-  --amber-s: rgba(245,158,11,0.1);
-  --amber-b: rgba(245,158,11,0.25);
+  --amber:   #f59e0b;
+  --amber-s: rgba(245,158,11,0.10);
+  --amber-b: rgba(245,158,11,0.22);
 
-  --rose: #f43f5e;
-  --rose-s: rgba(244,63,94,0.1);
-  --rose-b: rgba(244,63,94,0.25);
+  --rose:   #f43f5e;
+  --rose-s: rgba(244,63,94,0.10);
+  --rose-b: rgba(244,63,94,0.22);
 
-  --violet: #8b5cf6;
-  --violet-s: rgba(139,92,246,0.1);
-  --violet-b: rgba(139,92,246,0.25);
+  --violet:   #8b5cf6;
+  --violet-s: rgba(139,92,246,0.10);
+  --violet-b: rgba(139,92,246,0.22);
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
-  --shadow: 0 4px 16px rgba(0,0,0,0.4);
-  --shadow-lg: 0 20px 48px rgba(0,0,0,0.5);
-  --shadow-xl: 0 32px 64px rgba(0,0,0,0.6);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35);
+  --shadow:    0 4px 16px rgba(0,0,0,0.45);
+  --shadow-lg: 0 20px 48px rgba(0,0,0,0.55);
+  --shadow-xl: 0 32px 64px rgba(0,0,0,0.65);
 }
 
 html, body, #root {
   height: 100%;
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 /* Scrollbar */
@@ -129,11 +133,9 @@ html, body, #root {
 }
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
-  100% { background-position: 400px 0; }
+  100% { background-position:  400px 0; }
 }
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes tickPulse {
   0%, 100% { transform: scale(1); }
   50%       { transform: scale(1.012); }
@@ -143,12 +145,10 @@ html, body, #root {
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Utility animation classes */
 .anim-fade-up { animation: fadeUp 0.4s ease both; }
 .anim-fade-in { animation: fadeIn 0.25s ease both; }
 .anim-stat    { animation: statReveal 0.45s cubic-bezier(0.16,1,0.3,1) both; }
 
-/* Skeleton */
 .skeleton {
   background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%);
   background-size: 400px 100%;
@@ -156,23 +156,18 @@ html, body, #root {
   border-radius: var(--r);
 }
 
-/* Focus visible */
 :focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
   border-radius: var(--r-sm);
 }
 
-/* Subtle grain texture for sidebar using CSS-only dot pattern */
-.sidebar-texture {
-  position: relative;
-}
+.sidebar-texture { position: relative; }
 .sidebar-texture::after {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    radial-gradient(circle, rgba(0,0,0,0.07) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(0,0,0,0.06) 1px, transparent 1px);
   background-size: 4px 4px;
   pointer-events: none;
   border-radius: inherit;
@@ -181,12 +176,95 @@ html, body, #root {
 }
 .sidebar-texture > * { position: relative; z-index: 1; }
 
-/* Transition for theme switch — exclude transform so press animation isn't sluggish */
 *, *::before, *::after {
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.12s ease;
+}
+.no-transition, .no-transition * { transition: none !important; }
+
+/* ── Responsive utilities ───────────────────────────────────────────────────
+   Inline styles handle layout that doesn't change across breakpoints (the vast
+   majority of this app). These classes handle the specific spots — page
+   padding, topbar density, stat-row columns, multi-field form rows — that
+   are genuinely too wide/cramped on a phone if left at desktop values. */
+
+/* Page/panel padding: desktop default is generous; phones get tighter padding
+   so content doesn't lose ~15% of width to whitespace on a 375px screen. */
+.page-pad {
+  padding: 28px 32px;
+}
+.topbar-pad {
+  padding: 0 20px;
+}
+.header-pad {
+  padding-left: 28px;
+  padding-right: 28px;
+}
+.content-pad {
+  padding: 24px;
 }
 
-/* Remove transition on animation-critical elements */
-.no-transition, .no-transition * {
-  transition: none !important;
+/* Stat rows: 4-up on desktop, 2-up on tablet, 1-up on small phones. */
+.stat-row-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+/* Form rows with several fields side by side (rate setter, schedule inputs):
+   wrap to a single column below tablet width so fields don't get squeezed. */
+.form-row-wrap {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Topbar: hide secondary text (e.g. "12 pending") on narrow screens, keep icons. */
+.topbar-label {
+  display: inline;
+}
+
+.hide-mobile { display: inline; }
+.show-mobile-inline { display: none; }
+
+@media (max-width: 768px) {
+  .page-pad { padding: 18px 16px; }
+  .content-pad { padding: 16px; }
+  .topbar-pad { padding: 0 12px; gap: 6px !important; }
+  .header-pad { padding-left: 14px; padding-right: 14px; }
+  .stat-row-4 { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .form-row-wrap { gap: 8px; }
+  .form-row-wrap > * { flex: 1 1 100% !important; }
+  .hide-mobile { display: none !important; }
+  .show-mobile-inline { display: inline !important; }
+  .topbar-label { display: none; }
+}
+
+@media (max-width: 420px) {
+  .stat-row-4 { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .header-pad { padding-left: 10px; padding-right: 10px; }
+}
+
+/* Vertical dividers between stat cells — only makes sense in the desktop
+   4-up row. On mobile's 2-up layout we drop dividers entirely (gap alone
+   separates cells) rather than try to compute which edges should have one. */
+.stat-row-dividers .stat-row-divider-cell:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+@media (max-width: 768px) {
+  .stat-row-dividers .stat-row-divider-cell {
+    border-right: none !important;
+  }
+}
+
+/* For grids using a fixed ratio (e.g. "1fr 1.4fr") that only makes sense on a
+   wide screen — auto-fit/minmax grids don't need this, they already adapt. */
+.grid-stack-mobile {
+  display: grid;
+}
+@media (max-width: 768px) {
+  .grid-stack-mobile {
+    grid-template-columns: 1fr !important;
+  }
 }

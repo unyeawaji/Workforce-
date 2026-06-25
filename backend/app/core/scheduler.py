@@ -20,9 +20,18 @@ logger = logging.getLogger(__name__)
 _scheduler: Optional[AsyncIOScheduler] = None  # Optional syntax for Python 3.9 compat
 
 
-def _window_key(shift_id: int, next_due: datetime) -> str:
-    """Unique key for one check-in due window — resets once worker submits."""
-    return f"{shift_id}:{next_due.strftime('%Y%m%dT%H%M')}"
+def _window_key(shift_id: int, next_due: datetime, kind: str) -> str:
+    """
+    Unique key for one check-in notification — resets once worker submits.
+
+    `kind` distinguishes the "5 minutes left" warning from the "now overdue"
+    escalation. These must be separate keys: both share the same `next_due`
+    timestamp (it doesn't change just because time passed it), so without
+    `kind` the warning's throttle record would silently suppress the overdue
+    escalation too — meaning a worker who got the early warning would never
+    receive the overdue alert, even if they went significantly overdue.
+    """
+    return f"{shift_id}:{next_due.strftime('%Y%m%dT%H%M')}:{kind}"
 
 
 def _already_notified(db, shift_id: int, window_key: str) -> bool:
@@ -54,8 +63,9 @@ def _cleanup_old_logs(db) -> None:
 def _run_reminder():
     """Synchronous job body — imported lazily to avoid circular imports at startup."""
     from app.db.database import SessionLocal
-    from app.models.models import Shift, CheckIn, WorkSchedule, PushSubscription
-    from app.core.push import send_push
+    from app.models.models import Shift, CheckIn
+    from app.core.push import notify_user
+    from app.core.schedule_utils import get_or_create_work_schedule
     from sqlalchemy.orm import joinedload
 
     db = SessionLocal()
@@ -67,7 +77,7 @@ def _run_reminder():
         _cleanup_old_logs(db)
 
         # Get the check-in interval setting
-        schedule = db.query(WorkSchedule).filter(WorkSchedule.id == 1).first()
+        schedule = get_or_create_work_schedule(db)
         interval_minutes = schedule.checkin_interval_minutes if schedule else 120
 
         # All open shifts today (clocked in, not clocked out)
@@ -99,13 +109,15 @@ def _run_reminder():
             if not should_notify:
                 continue
 
-            # Throttle — only send one notification per due window, survive restarts
-            wk = _window_key(shift.id, next_due)
+            overdue = minutes_until_due < 0
+            kind = "overdue" if overdue else "warning"
+
+            # Throttle — only send one notification per (window, kind), survive restarts
+            wk = _window_key(shift.id, next_due, kind)
             if _already_notified(db, shift.id, wk):
                 continue
             _mark_notified(db, shift.id, wk)
 
-            overdue = minutes_until_due < 0
             if overdue:
                 title = "⛔ Check-in overdue!"
                 body = (
@@ -119,34 +131,7 @@ def _run_reminder():
                     "Take a screenshot of your dashboard and report your task count."
                 )
 
-            # Get all push subscriptions for this worker
-            subs = (
-                db.query(PushSubscription)
-                .filter(PushSubscription.worker_id == shift.worker_id)
-                .all()
-            )
-
-            stale_ids = []
-            for sub in subs:
-                result = send_push(
-                    endpoint=sub.endpoint,
-                    p256dh=sub.p256dh,
-                    auth_key=sub.auth,
-                    title=title,
-                    body=body,
-                    url="/",
-                )
-                if result is None:
-                    # Browser rejected the subscription — mark for removal
-                    stale_ids.append(sub.id)
-
-            # Clean up stale subscriptions
-            if stale_ids:
-                db.query(PushSubscription).filter(
-                    PushSubscription.id.in_(stale_ids)
-                ).delete(synchronize_session=False)
-                db.commit()
-                logger.info("Removed %d stale push subscriptions", len(stale_ids))
+            notify_user(db, shift.worker_id, title=title, body=body)
 
     except Exception as e:
         logger.error("checkin_reminder job error: %s", e)

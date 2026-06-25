@@ -1,30 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { activitiesApi, shiftsApi, usersApi, analyticsApi } from '../lib/api'
+import { activitiesApi, shiftsApi, usersApi, analyticsApi, applicationsApi } from '../lib/api'
 import { getErrorMessage } from '../lib/utils'
-
-// ── Generic fetch hook ────────────────────────────────────────────────────────
-export function useFetch(fetcher, deps = []) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetcher()
-      setData(res.data)
-    } catch (err) {
-      setError(getErrorMessage(err))
-    } finally {
-      setLoading(false)
-    }
-  }, deps)
-
-  useEffect(() => { load() }, [load])
-
-  return { data, loading, error, refetch: load }
-}
 
 // ── Activities ────────────────────────────────────────────────────────────────
 export function useActivities(params = {}) {
@@ -131,8 +107,11 @@ export function useWorkers() {
     return data
   }
 
-  const toggleActive = async (id, isActive) => {
-    const { data } = await usersApi.update(id, { is_active: !isActive })
+  const toggleActive = async (id, isActive, reason) => {
+    const payload = isActive
+      ? { is_active: false, deactivation_reason: reason || null }
+      : { is_active: true }
+    const { data } = await usersApi.update(id, payload)
     setWorkers(prev => prev.map(w => w.id === id ? data : w))
   }
 
@@ -200,31 +179,22 @@ export function useShiftHistory() {
   return { shifts, loading, refetch: load }
 }
 
-// ── Paginated activities ───────────────────────────────────────────────────────
-export function usePaginatedActivities(params = {}, pageSize = 20) {
-  const [activities, setActivities] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
+// ── Pending applications count (sidebar badge) ────────────────────────────────
+export function usePendingApplicationsCount(pollMs = 30000) {
+  const [count, setCount] = useState(0)
 
   const load = useCallback(async () => {
-    setLoading(true)
     try {
-      const { data } = await activitiesApi.list({ ...params, skip: (page - 1) * pageSize, limit: pageSize })
-      setActivities(Array.isArray(data) ? data : data.items || data)
-      setTotal(Array.isArray(data) ? data.length : data.total || data.length)
-    } finally {
-      setLoading(false)
-    }
-  }, [JSON.stringify(params), page])
+      const { data } = await applicationsApi.pendingCount()
+      setCount(data.pending)
+    } catch { /* silent — badge just won't update this cycle */ }
+  }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    const id = setInterval(load, pollMs)
+    return () => clearInterval(id)
+  }, [load, pollMs])
 
-  const verify = async (id, payload) => {
-    const { data } = await activitiesApi.verify(id, payload)
-    setActivities(prev => prev.map(a => a.id === id ? data : a))
-    return data
-  }
-
-  return { activities, loading, total, page, setPage, pageSize, refetch: load, verify }
+  return { count, refetch: load }
 }

@@ -18,7 +18,8 @@ export default function LoginPage() {
     setLoading(true); setError('')
     try {
       const user = await login(email, password)
-      navigate(user.role === 'admin' ? '/admin' : '/worker', { replace: true })
+      const dest = user.role === 'admin' ? '/admin' : user.role === 'client' ? '/client' : '/worker'
+      navigate(dest, { replace: true })
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -69,7 +70,7 @@ export default function LoginPage() {
               <line x1="206" y1="20" x2="206" y2="36" stroke="url(#lg1)" strokeWidth="0.7" strokeOpacity="0.3"/>
 
               {/* Top micro-label */}
-              <text x="110" y="13" textAnchor="middle" fontFamily="'Courier New', monospace" fontSize="6.5" letterSpacing="4" fill="url(#lg1)" fillOpacity="0.7" fontWeight="600">WORKFORCE</text>
+              <text x="110" y="13" textAnchor="middle" fontFamily="'Inter', sans-serif" fontSize="6.5" letterSpacing="4" fill="url(#lg1)" fillOpacity="0.7" fontWeight="700">WORKFORCE</text>
 
               {/* Main logo text */}
               <text
@@ -85,7 +86,7 @@ export default function LoginPage() {
               >AİİИDUCTION</text>
 
               {/* Bottom tagline */}
-              <text x="110" y="50" textAnchor="middle" fontFamily="'Courier New', monospace" fontSize="6" letterSpacing="2.5" fill="url(#lg1)" fillOpacity="0.5">POWERED BY NEURAL</text>
+              <text x="110" y="50" textAnchor="middle" fontFamily="'Inter', sans-serif" fontSize="6.5" letterSpacing="2.5" fontWeight="700" fill="url(#lg1)" fillOpacity="0.85">POWERED BY NEURAL</text>
 
               {/* Corner accents */}
               <path d="M1 14 L1 2 L13 2" stroke="url(#lg1)" strokeWidth="1.5" strokeLinecap="round" strokeOpacity="0.7" fill="none"/>
@@ -95,7 +96,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <div style={{ fontSize: 34, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--text)', lineHeight: 1.2 }}>
-            Track work.<br />Verify results.<br /><em style={{ color: 'var(--primary)' }}>Powered by Neural.</em>
+            Track work.<br />Verify results.<br /><span style={{ color: 'var(--primary)', fontWeight: 700, fontStyle: 'normal' }}>Powered by Neural.</span>
           </div>
         </div>
 
@@ -121,8 +122,22 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', textAlign: 'center', lineHeight: 1.7 }}>
-            Contact your admin for login credentials
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center' }}>
+              New here?{' '}
+              <a href="/apply" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 600 }}>
+                Apply for a position
+              </a>
+            </div>
+            <div style={{
+              fontSize: 11, color: 'var(--text3)', textAlign: 'center',
+              paddingTop: 8, borderTop: '1px solid var(--border)', width: '100%',
+            }}>
+              Client?{' '}
+              <span style={{ color: 'var(--text2)', fontWeight: 500 }}>
+                Use your credentials below — you'll be taken to the client portal automatically.
+              </span>
+            </div>
           </div>
         </div>
       </div>
