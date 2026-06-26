@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Activity, Shift, User, UserRole, VerificationStatus
 from app.schemas.schemas import ActivityCreate, ActivityUpdate, ActivityOut, VerifyActivityRequest
-from app.api.deps import get_current_user, require_admin, require_regular_admin
+from app.api.deps import get_current_user, require_regular_admin
 from app.core.team import team_worker_ids
 
 router = APIRouter(prefix="/activities", tags=["Activities"])

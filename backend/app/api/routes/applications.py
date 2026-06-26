@@ -69,7 +69,11 @@ def submit_application(payload: JobApplicationCreate, db: Session = Depends(get_
     """Public: create application + inactive worker account."""
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(409, "Email already registered")
-    admin = db.query(User).filter(User.id == payload.admin_id, User.role == UserRole.admin).first()
+    admin = db.query(User).filter(
+        User.id == payload.admin_id,
+        User.role == UserRole.admin,
+        User.is_system_admin == False,   # never allow applying under the system/general team
+    ).first()
     if not admin:
         raise HTTPException(404, "Selected team not found")
 

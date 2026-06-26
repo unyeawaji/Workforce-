@@ -65,13 +65,13 @@ def _run_reminder():
     from app.db.database import SessionLocal
     from app.models.models import Shift, CheckIn
     from app.core.push import notify_user
-    from app.core.schedule_utils import get_or_create_work_schedule
+    from app.core.schedule_utils import get_or_create_work_schedule, logical_today
     from sqlalchemy.orm import joinedload
 
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        today = now.date()
+        today = logical_today(now)
 
         # Prune old log rows once per run
         _cleanup_old_logs(db)

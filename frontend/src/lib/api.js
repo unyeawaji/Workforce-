@@ -34,7 +34,6 @@ export const authApi = {
 
 export const usersApi = {
   list: (params) => api.get('/users', { params }),
-  listAdmins: () => api.get('/users/admins'),
   create: (data) => api.post('/users', data),
   update: (id, data) => api.patch(`/users/${id}`, data),
   delete: (id) => api.delete(`/users/${id}`),

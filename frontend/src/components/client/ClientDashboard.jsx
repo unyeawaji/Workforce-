@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuthStore } from '../../store/authStore'
 import { useThemeStore } from '../../store/themeStore'
 import { clientsApi, profileApi } from '../../lib/api'
@@ -439,6 +439,46 @@ export default function ClientDashboard() {
   const [pwSuccess, setPwSuccess]     = useState(false)
   const [pwLoading, setPwLoading]     = useState(false)
 
+  // ── Wake Lock (keep laptop/screen on) ────────────────────────────────────
+  const [wakeLock, setWakeLock]   = useState(false)  // toggle state
+  const wakeLockRef               = useRef(null)      // holds the WakeLockSentinel
+
+  const toggleWakeLock = useCallback(async () => {
+    if (!('wakeLock' in navigator)) {
+      alert('Screen wake lock is not supported in this browser. Use Chrome or Edge.')
+      return
+    }
+    if (wakeLock) {
+      // Release
+      try { await wakeLockRef.current?.release() } catch (_) {}
+      wakeLockRef.current = null
+      setWakeLock(false)
+    } else {
+      // Acquire
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen')
+        setWakeLock(true)
+        // Auto-reacquire if page becomes visible again (tab switch releases it)
+        wakeLockRef.current.addEventListener('release', () => {
+          if (document.visibilityState === 'visible') {
+            navigator.wakeLock.request('screen')
+              .then(s => { wakeLockRef.current = s })
+              .catch(() => {})
+          } else {
+            setWakeLock(false)
+          }
+        })
+      } catch (e) {
+        alert('Could not activate wake lock: ' + e.message)
+      }
+    }
+  }, [wakeLock])
+
+  // Release wake lock when component unmounts
+  useEffect(() => {
+    return () => { wakeLockRef.current?.release().catch(() => {}) }
+  }, [])
+
   const handlePwChange = async () => {
     setPwError('')
     if (!pwForm.current) { setPwError('Current password is required'); return }
@@ -517,6 +557,20 @@ export default function ClientDashboard() {
           }}>
             <span className="hide-mobile">Change Password</span>
             <span className="show-mobile-inline">🔒</span>
+          </button>
+          <button
+            onClick={toggleWakeLock}
+            title={wakeLock ? 'Click to let screen sleep' : 'Click to keep screen awake'}
+            style={{
+              background: wakeLock ? 'var(--primary)' : 'none',
+              border: `1px solid ${wakeLock ? 'var(--primary)' : 'var(--border)'}`,
+              color: wakeLock ? '#fff' : 'var(--text3)',
+              padding: '6px 11px', borderRadius: 'var(--r)',
+              cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)', flexShrink: 0,
+              transition: 'all .15s',
+            }}
+          >
+            {wakeLock ? '☀️' : 'Keep On'}
           </button>
           <button onClick={toggleDark} style={{
             background: 'none', border: '1px solid var(--border)',

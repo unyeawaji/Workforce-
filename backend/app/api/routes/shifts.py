@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
 from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate, ShiftNoteUpdate
-from app.api.deps import get_current_user, require_regular_admin, require_regular_admin
+from app.api.deps import get_current_user, require_regular_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
 from app.core.schedule_utils import get_work_window_status, logical_today, get_or_create_work_schedule
 

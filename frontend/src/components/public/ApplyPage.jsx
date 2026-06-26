@@ -122,7 +122,13 @@ export default function ApplyPage() {
   const [serverError, setServerError] = useState('')
 
   useEffect(() => {
-    applicationsApi.listAdmins().then(r => setAdmins(r.data)).catch(() => {})
+    applicationsApi.listAdmins()
+      .then(r => {
+        // Extra guard: never show system admin / general team even if backend slips one through
+        const hireable = (r.data || []).filter(a => !a.is_system_admin)
+        setAdmins(hireable)
+      })
+      .catch(() => {})
   }, [])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))

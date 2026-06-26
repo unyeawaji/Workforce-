@@ -28,7 +28,7 @@ from app.schemas.schemas import (
     ClientCreate, ClientWorkerAssign, ClientOut, WorkerLiveStatus, WorkerDailySummary,
     WorkerReviewCreate, WorkerReviewUpdate, WorkerReviewOut, WorkerReviewSummary,
 )
-from app.api.deps import require_regular_admin, require_regular_admin, require_client, require_worker, get_current_user
+from app.api.deps import require_regular_admin, require_client, require_worker, get_current_user
 from app.core.security import get_password_hash
 from app.core.schedule_utils import logical_today
 from app.core.push import notify_user

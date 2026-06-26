@@ -9,7 +9,7 @@ from app.schemas.schemas import (
     DayScheduleOut, DayScheduleUpdate,
     HolidayCreate, HolidayOut, WorkWindowStatus,
 )
-from app.api.deps import require_regular_admin, require_regular_admin, get_current_user
+from app.api.deps import require_regular_admin, get_current_user
 from app.core.schedule_utils import (
     DAY_NAMES,
     get_work_window_status,

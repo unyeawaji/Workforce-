@@ -71,7 +71,8 @@ SERVICES_CATALOG = {
 class AdminPublic(BaseModel):
     id: int
     name: str
-    services: List[str] = []   # list of service keys from SERVICES_CATALOG
+    services: List[str] = []       # list of service keys from SERVICES_CATALOG
+    is_system_admin: bool = False  # exposed so frontend can double-filter
     model_config = {"from_attributes": True}
 
 

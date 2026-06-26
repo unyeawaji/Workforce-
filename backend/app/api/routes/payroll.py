@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import DepartmentRate, Shift, CheckIn, User, UserRole
 from app.schemas.schemas import DepartmentRateOut, DepartmentRateUpsert, WorkerPayrollOut
-from app.api.deps import require_regular_admin, require_regular_admin, get_current_user
+from app.api.deps import require_regular_admin, get_current_user
 from app.core.schedule_utils import get_or_create_work_schedule
 
 router = APIRouter(prefix="/payroll", tags=["Payroll"])

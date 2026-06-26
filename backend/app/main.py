@@ -10,7 +10,6 @@ from app.core.security import get_password_hash
 from app.db.database import engine, Base, SessionLocal
 from app.api.routes import auth, users, activities, shifts, analytics, payroll, schedule, push
 from app.api.routes import applications, clients, invites, sys as sys_routes
-from app.api.routes import applications, clients, invites
 from app.core.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
