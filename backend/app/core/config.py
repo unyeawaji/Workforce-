@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        case_sensitive = False  # Railway env vars are uppercase; never silently miss them
 
 
 settings = Settings()

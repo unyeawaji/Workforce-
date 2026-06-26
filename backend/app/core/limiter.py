@@ -10,4 +10,19 @@ Route modules import it directly to apply @limiter.limit decorators.
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-limiter = Limiter(key_func=get_remote_address)
+
+def _real_ip(request) -> str:
+    """
+    Railway (and most cloud platforms) sit behind a load balancer that sets
+    X-Forwarded-For to the real client IP. Using get_remote_address would return
+    the shared proxy IP, causing the rate limit to fire across ALL users after
+    just 10 combined login attempts. We take the first (leftmost) IP from
+    X-Forwarded-For, which is the actual client, falling back to REMOTE_ADDR.
+    """
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_real_ip)
