@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
 from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate, ShiftNoteUpdate
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_regular_admin, require_regular_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
 from app.core.schedule_utils import get_work_window_status, logical_today, get_or_create_work_schedule
 
@@ -76,7 +76,7 @@ def get_schedule(db: Session = Depends(get_db), user=Depends(get_current_user)):
 
 
 @router.patch("/schedule", response_model=WorkScheduleOut)
-def update_schedule(payload: WorkScheduleUpdate, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def update_schedule(payload: WorkScheduleUpdate, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     s = _get_schedule(db)
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(s, k, v)
@@ -350,7 +350,7 @@ def list_shifts(
 # ── Admin: all shifts today with punctuality ──────────────────────────────────
 
 @router.get("/admin/today", response_model=List[ShiftOutFull])
-def admin_today_shifts(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def admin_today_shifts(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     # Only shifts for workers belonging to this admin's team
     team_ids = [u.id for u in db.query(User).filter(User.admin_id == admin.id, User.role == UserRole.worker).all()]
     shifts = (
@@ -370,7 +370,7 @@ def admin_shift_history(
     date_to: Optional[date] = None,
     worker_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     team_ids = [u.id for u in db.query(User).filter(User.admin_id == admin.id, User.role == UserRole.worker).all()]
     q = (
@@ -395,7 +395,7 @@ def unblock_shift(
     shift_id: int,
     reason: Optional[str] = None,   # FIX: record why shift was unblocked
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     shift = db.query(Shift).filter(Shift.id == shift_id).first()
     if not shift:

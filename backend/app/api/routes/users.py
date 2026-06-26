@@ -8,14 +8,14 @@ from app.core.security import get_password_hash, verify_password
 from app.db.database import get_db
 from app.models.models import User, UserRole, Shift
 from app.schemas.schemas import UserCreate, UserUpdate, UserOut
-from app.api.deps import require_admin, get_current_user
+from app.api.deps import require_admin, require_regular_admin, require_system_admin, get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=UserOut, status_code=201)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=409, detail="Email already registered")
     # Workers and clients created by an admin are automatically assigned to that admin
@@ -38,7 +38,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), admin=Depend
 def list_users(
     role: Optional[UserRole] = None,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     # Admins only see workers/clients in their own team
     q = db.query(User).filter(User.admin_id == admin.id)
@@ -77,7 +77,7 @@ def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(g
 
 
 @router.patch("/{user_id}", response_model=UserOut)
-def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     user = db.query(User).filter(User.id == user_id, User.admin_id == admin.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -115,7 +115,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{user_id}", status_code=204)
-def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     user = db.query(User).filter(User.id == user_id, User.admin_id == admin.id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

@@ -6,7 +6,7 @@ import { useThemeStore } from '../../store/themeStore'
 import { useActivities, useWorkers, useDashboardStats, useToast, usePendingApplicationsCount } from '../../hooks'
 import { fmtDate, fmtTime, fmtMinutes, getDuration, getErrorMessage } from '../../lib/utils'
 import { Avatar, Badge, Button, Card, Input, Textarea, Select, Toggle, Spinner, Alert, EmptyState, Divider, Modal, ToastContainer, Skeleton, StarDisplay } from '../ui'
-import { analyticsApi, applicationsApi, clientsApi, usersApi, invitesApi } from '../../lib/api'
+import { analyticsApi, applicationsApi, clientsApi, usersApi, invitesApi, sysApi } from '../../lib/api'
 import api from '../../lib/api'
 import { unsubscribeAll, registerSW, requestAndSubscribe, isPushSubscribed } from '../../lib/pushNotifications'
 
@@ -712,7 +712,7 @@ function ReviewsPanel() {
   useEffect(() => { load() }, [filterWorker])
 
   return (
-    <div>
+    <div className="page-pad" style={{ maxWidth: 860, margin: '0 auto' }}>
       <div style={{ fontSize: 22, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 3 }}>Reviews</div>
       <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>What clients are saying about your team.</div>
 
@@ -849,8 +849,17 @@ function ApplicationsPanel({ onActioned }) {
                           {a.cover_letter}
                         </div>
                       )}
-                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8, fontFamily: 'var(--font-mono)' }}>
-                        Applied {new Date(a.applied_at).toLocaleDateString()}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+                          background: a.position_type === 'onboarding_assessment' ? 'rgba(8,145,178,.12)' : 'rgba(5,150,105,.12)',
+                          color: a.position_type === 'onboarding_assessment' ? '#0891b2' : '#059669',
+                        }}>
+                          {a.position_type === 'onboarding_assessment' ? '📝 Onboarding & Assessment' : '✅ Tasker'}
+                        </span>
+                        <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
+                          Applied {new Date(a.applied_at).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -879,6 +888,9 @@ function ApplicationsPanel({ onActioned }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{a.full_name}</div>
                       <div style={{ fontSize: 12, color: 'var(--text3)' }}>{a.email}</div>
+                      <div style={{ fontSize: 11, marginTop: 3, fontWeight: 600, color: a.position_type === 'onboarding_assessment' ? '#0891b2' : '#059669' }}>
+                        {a.position_type === 'onboarding_assessment' ? '📝 Onboarding & Assessment' : '✅ Tasker'}
+                      </div>
                     </div>
                     <Badge status={a.status === 'approved' ? 'active' : 'suspended'}>
                       {a.status === 'approved' ? '✓ Approved' : '✕ Rejected'}
@@ -1246,12 +1258,35 @@ function SettingsPanel() {
   const [saved, setSaved] = useState(false)
   const [form, setForm] = useState({ clock_in_deadline_hour: 9, clock_in_deadline_minute: 0, checkin_interval_minutes: 120, grace_period_minutes: 15, currency: 'USD' })
 
+  // Services config
+  const [myServices, setMyServices] = useState([])
+  const [savingServices, setSavingServices] = useState(false)
+  const [savedServices, setSavedServices] = useState(false)
+
+  const ALL_SERVICES = [
+    { key: 'account_recovery', label: 'Account Recovery', emoji: '🔓', desc: 'Recovering suspended/banned Aether accounts' },
+    { key: 'assessment',       label: 'Assessment',       emoji: '📝', desc: 'Conducting quality assessments on Aether' },
+    { key: 'tasker',           label: 'Tasker',           emoji: '✅', desc: 'AI task completion on Outlier' },
+    { key: 'onboarding',       label: 'Onboarding',       emoji: '🚀', desc: 'New contractor onboarding on Aether' },
+  ]
+
   useEffect(() => {
-    api.get('/shifts/schedule').then(r => {
-      setSchedule(r.data)
-      setForm(r.data)
-    })
+    api.get('/shifts/schedule').then(r => { setSchedule(r.data); setForm(r.data) })
+    applicationsApi.getMyServices().then(r => setMyServices(r.data.services || [])).catch(() => {})
   }, [])
+
+  const toggleService = (key) => {
+    setMyServices(prev => prev.includes(key) ? prev.filter(s => s !== key) : [...prev, key])
+  }
+
+  const saveServices = async () => {
+    setSavingServices(true)
+    try {
+      await applicationsApi.updateMyServices(myServices)
+      setSavedServices(true)
+      setTimeout(() => setSavedServices(false), 2000)
+    } finally { setSavingServices(false) }
+  }
 
   const save = async () => {
     setSaving(true)
@@ -1301,7 +1336,7 @@ function SettingsPanel() {
         </div>
       </Card>
 
-      <Card style={{ marginBottom: 28 }}>
+      <Card style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>⚡ Grace Period</div>
         <label style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'var(--font-mono)', display: 'block', marginBottom: 6 }}>MINUTES AFTER DEADLINE BEFORE BLOCKING</label>
         <input type="number" min={0} max={60} value={form.grace_period_minutes}
@@ -1326,6 +1361,36 @@ function SettingsPanel() {
 
       <Button variant="primary" onClick={save} disabled={saving} style={{ minWidth: 140 }}>
         {saving ? <><Spinner size={13} color="#fff" /> Saving…</> : saved ? '✓ Saved' : 'Save Settings'}
+      </Button>
+
+      {/* ── Team Services ── */}
+      <div style={{ fontSize: 15, fontWeight: 700, marginTop: 40, marginBottom: 4 }}>Team Services</div>
+      <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 18 }}>
+        Select the services your team offers. These are displayed publicly on the job application page so applicants know what they're applying for.
+      </div>
+      <Card style={{ marginBottom: 16 }}>
+        {ALL_SERVICES.map((svc, i) => (
+          <div key={svc.key} onClick={() => toggleService(svc.key)} style={{
+            display: 'flex', alignItems: 'center', gap: 14, padding: '13px 0', cursor: 'pointer',
+            borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+          }}>
+            <div style={{ fontSize: 22, width: 32, textAlign: 'center', flexShrink: 0 }}>{svc.emoji}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{svc.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{svc.desc}</div>
+            </div>
+            <div style={{
+              width: 20, height: 20, borderRadius: 6, border: `2px solid ${myServices.includes(svc.key) ? 'var(--primary)' : 'var(--border)'}`,
+              background: myServices.includes(svc.key) ? 'var(--primary)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all .15s',
+            }}>
+              {myServices.includes(svc.key) && <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+            </div>
+          </div>
+        ))}
+      </Card>
+      <Button variant="primary" onClick={saveServices} disabled={savingServices} style={{ minWidth: 160 }}>
+        {savingServices ? <><Spinner size={13} color="#fff" /> Saving…</> : savedServices ? '✓ Saved' : 'Save Services'}
       </Button>
 
       {/* ── Weekly Schedule ── */}
@@ -1732,11 +1797,370 @@ function AttendancePanel({ workers }) {
   )
 }
 
+// ── System Admin: Admin Detail Drilldown ───────────────────────────────────────
+function AdminDrilldown({ admin, onBack, onSuspend, onDelete, toast }) {
+  const [activeTab, setActiveTab] = useState('workers')
+  const [workers,    setWorkers]    = useState([])
+  const [clients,    setClients]    = useState([])
+  const [shifts,     setShifts]     = useState([])
+  const [activities, setActivities] = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      sysApi.getWorkers(admin.id),
+      sysApi.getClients(admin.id),
+      sysApi.getShifts(admin.id),
+      sysApi.getActivities(admin.id),
+    ]).then(([w, c, s, a]) => {
+      setWorkers(w.data)
+      setClients(c.data)
+      setShifts(s.data)
+      setActivities(a.data)
+    }).catch(() => toast('Failed to load team data', 'error'))
+      .finally(() => setLoading(false))
+  }, [admin.id])
+
+  const tabs = [
+    { id: 'workers',    label: `Workers (${workers.length})` },
+    { id: 'clients',    label: `Clients (${clients.length})` },
+    { id: 'shifts',     label: `Shifts` },
+    { id: 'activities', label: `Activities` },
+  ]
+
+  const handleSuspend = async () => {
+    try {
+      await sysApi.updateAdmin(admin.id, { is_active: !admin.is_active })
+      toast(`Admin ${admin.is_active ? 'suspended' : 'reactivated'}`, 'success')
+      onSuspend()
+    } catch { toast('Action failed', 'error') }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await sysApi.deleteAdmin(admin.id)
+      toast('Admin removed', 'success')
+      onDelete()
+    } catch { toast('Delete failed', 'error') }
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', fontSize: 13, padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4 }}>
+          ← All Admins
+        </button>
+        <div style={{ flex: 1 }} />
+        <Button variant="ghost" size="sm" onClick={handleSuspend}>
+          {admin.is_active ? '⏸ Suspend' : '▶ Reactivate'}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} style={{ color: 'var(--rose)' }}>
+          🗑 Remove Admin
+        </Button>
+      </div>
+
+      {/* Admin identity card */}
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Avatar name={admin.name} size={52} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{admin.name}</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)' }}>{admin.email}</div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+              Joined {new Date(admin.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </div>
+          </div>
+          <div style={{
+            fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-sm)',
+            background: admin.is_active ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
+            color: admin.is_active ? 'var(--emerald)' : 'var(--rose)',
+          }}>{admin.is_active ? 'Active' : 'Suspended'}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
+          {[
+            { label: 'Workers',        value: admin.worker_count,       color: 'var(--primary)' },
+            { label: 'Clients',        value: admin.client_count,       color: 'var(--violet)'  },
+            { label: 'Online Now',     value: admin.active_today,       color: 'var(--emerald)' },
+            { label: 'Pending Review', value: admin.pending_activities, color: 'var(--amber)'   },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ textAlign: 'center', padding: '10px 0', borderRadius: 'var(--r-md)', background: 'var(--bg)' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color }}>{value}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, background: 'var(--surface)', borderRadius: 'var(--r-md)', padding: 4 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
+            flex: 1, padding: '6px 8px', border: 'none', borderRadius: 'var(--r-sm)', cursor: 'pointer',
+            fontSize: 12, fontWeight: 600, transition: 'all .15s',
+            background: activeTab === t.id ? 'var(--bg)' : 'transparent',
+            color: activeTab === t.id ? 'var(--text)' : 'var(--text3)',
+            boxShadow: activeTab === t.id ? 'var(--shadow-sm)' : 'none',
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[...Array(4)].map((_, i) => <Skeleton key={i} height={52} />)}
+        </div>
+      ) : (
+        <>
+          {/* Workers tab */}
+          {activeTab === 'workers' && (
+            workers.length === 0
+              ? <EmptyState icon="👷" title="No workers" sub="This admin has no workers yet." />
+              : <Card>
+                {workers.map((w, i) => (
+                  <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <Avatar name={w.name} size={34} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{w.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{w.email}{w.department ? ` · ${w.department}` : ''}</div>
+                    </div>
+                    <div style={{
+                      fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-sm)',
+                      background: w.is_active ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
+                      color: w.is_active ? 'var(--emerald)' : 'var(--rose)',
+                    }}>{w.is_active ? 'Active' : 'Inactive'}</div>
+                  </div>
+                ))}
+              </Card>
+          )}
+
+          {/* Clients tab */}
+          {activeTab === 'clients' && (
+            clients.length === 0
+              ? <EmptyState icon="🏢" title="No clients" sub="This admin has no clients yet." />
+              : <Card>
+                {clients.map((c, i) => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <Avatar name={c.name} size={34} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{c.email}</div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{c.assigned_worker_ids.length} workers</div>
+                    <div style={{
+                      fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 'var(--r-sm)',
+                      background: c.is_active ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
+                      color: c.is_active ? 'var(--emerald)' : 'var(--rose)',
+                    }}>{c.is_active ? 'Active' : 'Inactive'}</div>
+                  </div>
+                ))}
+              </Card>
+          )}
+
+          {/* Shifts tab */}
+          {activeTab === 'shifts' && (
+            shifts.length === 0
+              ? <EmptyState icon="🕐" title="No shifts" sub="No shift data for this admin's team." />
+              : <Card>
+                {shifts.map((s, i) => (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ minWidth: 64, fontSize: 12, color: 'var(--text3)' }}>{fmtDate(s.date)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{s.worker?.name ?? `Worker #${s.worker_id}`}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                        {s.clock_in ? fmtTime(s.clock_in) : '—'} → {s.clock_out ? fmtTime(s.clock_out) : 'ongoing'}
+                        {s.total_minutes ? ` · ${fmtMinutes(s.total_minutes)}` : ''}
+                      </div>
+                    </div>
+                    {s.is_blocked && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--rose)' }}>BLOCKED</span>}
+                    {s.is_late && !s.is_blocked && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber)' }}>LATE</span>}
+                  </div>
+                ))}
+              </Card>
+          )}
+
+          {/* Activities tab */}
+          {activeTab === 'activities' && (
+            activities.length === 0
+              ? <EmptyState icon="📋" title="No activities" sub="No activity submissions from this team." />
+              : <Card>
+                {activities.map((a, i) => (
+                  <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ minWidth: 64, fontSize: 12, color: 'var(--text3)' }}>{fmtDate(a.date)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.task_title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{a.worker?.name ?? `Worker #${a.worker_id}`}</div>
+                    </div>
+                    <div style={{
+                      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-sm)',
+                      background: a.verification_status === 'approved' ? 'rgba(16,185,129,.12)'
+                        : a.verification_status === 'rejected' ? 'rgba(239,68,68,.12)'
+                        : 'rgba(245,158,11,.12)',
+                      color: a.verification_status === 'approved' ? 'var(--emerald)'
+                        : a.verification_status === 'rejected' ? 'var(--rose)'
+                        : 'var(--amber)',
+                    }}>{a.verification_status}</div>
+                  </div>
+                ))}
+              </Card>
+          )}
+        </>
+      )}
+
+      {/* Delete confirm modal */}
+      {confirmDelete && (
+        <div onClick={() => setConfirmDelete(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: 'min(380px,90vw)', background: 'var(--surface)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-xl)', padding: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Remove Admin?</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
+              <strong>{admin.name}</strong> will be permanently removed. Their {admin.worker_count} worker(s) and {admin.client_count} client(s) will become unassigned — no data will be deleted.
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)} style={{ flex: 1 }}>Cancel</Button>
+              <Button size="sm" onClick={handleDelete} style={{ flex: 1, background: 'var(--rose)', color: '#fff' }}>Remove</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── System Admin Overview ──────────────────────────────────────────────────────
+function SystemAdminOverview({ toast }) {
+  const [admins,     setAdmins]     = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [drilldown,  setDrilldown]  = useState(null)  // admin object being viewed
+  const [search,     setSearch]     = useState('')
+
+  const load = () => {
+    setLoading(true)
+    sysApi.listAdmins()
+      .then(r => setAdmins(r.data))
+      .catch(() => toast('Failed to load admins', 'error'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [])
+
+  if (drilldown) {
+    return (
+      <AdminDrilldown
+        admin={drilldown}
+        toast={toast}
+        onBack={() => { setDrilldown(null); load() }}
+        onSuspend={() => { load(); setDrilldown(prev => ({ ...prev, is_active: !prev.is_active })) }}
+        onDelete={() => { setDrilldown(null); load() }}
+      />
+    )
+  }
+
+  const filtered = admins.filter(a =>
+    a.name.toLowerCase().includes(search.toLowerCase()) ||
+    a.email.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const totalWorkers    = admins.reduce((s, a) => s + a.worker_count,       0)
+  const totalClients    = admins.reduce((s, a) => s + a.client_count,       0)
+  const totalOnline     = admins.reduce((s, a) => s + a.active_today,       0)
+  const totalPending    = admins.reduce((s, a) => s + a.pending_activities, 0)
+
+  return (
+    <div>
+      {/* Headline stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px,1fr))', gap: 14, marginBottom: 28 }}>
+        <StatCard label="Total Admins"      value={loading ? '—' : admins.length}  sub="registered teams"     color="var(--primary)"  loading={loading} delay={0}   />
+        <StatCard label="Total Workers"     value={loading ? '—' : totalWorkers}   sub="across all teams"     color="var(--emerald)"  loading={loading} delay={60}  />
+        <StatCard label="Total Clients"     value={loading ? '—' : totalClients}   sub="across all teams"     color="var(--violet)"   loading={loading} delay={120} />
+        <StatCard label="Online Now"        value={loading ? '—' : totalOnline}    sub="clocked in today"     color="var(--amber)"    loading={loading} delay={180} />
+        <StatCard label="Pending Review"    value={loading ? '—' : totalPending}   sub="activity submissions"  color="var(--rose)"     loading={loading} delay={240} />
+      </div>
+
+      {/* Search */}
+      <div style={{ marginBottom: 14 }}>
+        <Input
+          placeholder="Search admins…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ maxWidth: 320 }}
+        />
+      </div>
+
+      {/* Admin list */}
+      {loading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {[...Array(3)].map((_, i) => <Skeleton key={i} height={72} />)}
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState icon="👤" title="No admins yet" sub="Use the Invites tab to invite your first admin." />
+      ) : (
+        <Card>
+          {filtered.map((a, i) => (
+            <div
+              key={a.id}
+              onClick={() => setDrilldown(a)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '14px 0', cursor: 'pointer',
+                borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+                transition: 'opacity .15s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '.75'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >
+              <Avatar name={a.name} size={40} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{a.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.email}</div>
+              </div>
+
+              {/* Mini stat pills */}
+              <div style={{ display: 'flex', gap: 10, flexShrink: 0, alignItems: 'center' }}>
+                {[
+                  { val: a.worker_count,       label: 'workers',  color: 'var(--primary)' },
+                  { val: a.client_count,        label: 'clients',  color: 'var(--violet)'  },
+                  { val: a.active_today,        label: 'online',   color: 'var(--emerald)' },
+                  { val: a.pending_activities,  label: 'pending',  color: a.pending_activities > 0 ? 'var(--amber)' : 'var(--text3)' },
+                ].map(({ val, label, color }) => (
+                  <div key={label} style={{ textAlign: 'center', minWidth: 36 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color }}>{val}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text3)' }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{
+                fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-sm)', flexShrink: 0,
+                background: a.is_active ? 'rgba(16,185,129,.12)' : 'rgba(239,68,68,.12)',
+                color: a.is_active ? 'var(--emerald)' : 'var(--rose)',
+              }}>{a.is_active ? 'Active' : 'Suspended'}</div>
+
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  )
+}
+
 export default function AdminDashboard() {
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const navigate = useNavigate()
   const { dark, toggle: toggleTheme } = useThemeStore()
+  const isSystemAdmin = user?.is_system_admin === true
+
+  // System admin only sees Overview (Admins view) + Invites
+  // Regular admins see everything except Invites
+  const visibleNav = NAV.filter(item => {
+    if (isSystemAdmin) return item.id === 'overview' || item.id === 'invites'
+    return item.id !== 'invites'
+  }).map(item => isSystemAdmin && item.id === 'overview'
+    ? { ...item, label: 'Admins' }
+    : item
+  )
 
   const handleLogout = async () => {
     await Promise.race([unsubscribeAll(), new Promise(r => setTimeout(r, 3000))])
@@ -1763,9 +2187,9 @@ export default function AdminDashboard() {
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  const { activities, loading: actLoading, verify } = useActivities({ limit: 200 })
-  const { workers, loading: workerLoading, create, toggleActive, remove } = useWorkers()
-  const { stats, weekly, loading: statsLoading } = useDashboardStats()
+  const { activities, loading: actLoading, verify } = useActivities(isSystemAdmin ? null : { limit: 200 })
+  const { workers, loading: workerLoading, create, toggleActive, remove } = useWorkers(isSystemAdmin)
+  const { stats, weekly, loading: statsLoading } = useDashboardStats(isSystemAdmin)
   const { toasts, toast, removeToast } = useToast()
   const { count: pendingApps, refetch: refetchPendingApps } = usePendingApplicationsCount()
 
@@ -1872,10 +2296,10 @@ export default function AdminDashboard() {
 
         {/* Nav */}
         <nav style={{ padding: '12px 8px', flex: 1 }}>
-          {NAV.map(item => {
+          {visibleNav.map(item => {
             const active = tab === item.id
             return (
-              <button key={item.id} onClick={() => setTab(item.id)} style={{
+              <button key={item.id} onClick={() => { setTab(item.id); if (isMobile) setSidebarOpen(false) }} style={{
                 display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                 padding: sidebarOpen ? '9px 12px 9px 14px' : '9px', borderRadius: 'var(--r)',
                 border: 'none', cursor: 'pointer', marginBottom: 2,
@@ -1961,6 +2385,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {isSystemAdmin ? <SystemAdminOverview toast={toast} /> : (<>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
                 <StatCard label="Active Workers" value={statsLoading ? '—' : stats?.active_workers_today} sub="clocked in today" color="var(--primary)" loading={statsLoading} delay={0} />
                 <StatCard label="Pending Review" value={statsLoading ? '—' : stats?.pending_verifications} sub="need attention" color="var(--amber)" loading={statsLoading} delay={80} />
@@ -2026,6 +2451,7 @@ export default function AdminDashboard() {
                 ))}
                 {pending === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 13 }}>✓ All activities reviewed!</div>}
               </Card>
+              </>)}
             </div>
           )}
 
@@ -2054,7 +2480,7 @@ export default function AdminDashboard() {
       {drawer && <VerifyDrawer activity={drawer} onClose={() => setDrawer(null)} onVerify={handleVerify} />}
 
       {/* Settings & Attendance panels rendered as full-page overlays over main content */}
-      {(tab === 'settings' || tab === 'attendance' || tab === 'payroll' || tab === 'applications' || tab === 'clients' || tab === 'invites') && (
+      {(tab === 'settings' || tab === 'attendance' || tab === 'payroll' || tab === 'applications' || tab === 'clients' || tab === 'invites' || tab === 'reviews') && (
         <div style={{ position: 'fixed', top: 54, right: 0, bottom: 0, left: sidebarWidth, background: 'var(--bg)', zIndex: 10, overflowY: 'auto' }}>
           {tab === 'settings'      && <SettingsPanel />}
           {tab === 'attendance'    && <AttendancePanel workers={workers} />}

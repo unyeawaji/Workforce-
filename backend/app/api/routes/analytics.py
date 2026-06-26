@@ -13,7 +13,7 @@ from app.core.security import decode_token, create_export_token, verify_export_t
 from app.db.database import get_db
 from app.models.models import Activity, Shift, User, UserRole, VerificationStatus
 from app.schemas.schemas import DashboardStats, WeeklyStats, WeeklyPoint
-from app.api.deps import require_admin
+from app.api.deps import require_admin, require_regular_admin
 from app.core.team import team_worker_ids
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/dashboard", response_model=DashboardStats)
-def dashboard(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def dashboard(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     today = datetime.now(timezone.utc).date()
     wids = team_worker_ids(db, admin.id)
     if not wids:
@@ -71,7 +71,7 @@ def dashboard(db: Session = Depends(get_db), admin=Depends(require_admin)):
 
 
 @router.get("/weekly", response_model=WeeklyStats)
-def weekly(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def weekly(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     today = datetime.now(timezone.utc).date()
     wids = team_worker_ids(db, admin.id)
     points = []
@@ -95,7 +95,7 @@ def weekly(db: Session = Depends(get_db), admin=Depends(require_admin)):
 
 
 @router.get("/export-token")
-def get_export_token(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def get_export_token(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     token, _jti = create_export_token(str(admin.id))
     return {"export_token": token}
 

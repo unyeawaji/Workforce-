@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.models.models import Activity, Shift, User, UserRole, VerificationStatus
 from app.schemas.schemas import ActivityCreate, ActivityUpdate, ActivityOut, VerifyActivityRequest
-from app.api.deps import get_current_user, require_admin
+from app.api.deps import get_current_user, require_admin, require_regular_admin
 from app.core.team import team_worker_ids
 
 router = APIRouter(prefix="/activities", tags=["Activities"])
@@ -116,7 +116,7 @@ def delete(activity_id: int, db=Depends(get_db), user=Depends(get_current_user))
 
 
 @router.post("/{activity_id}/verify", response_model=ActivityOut)
-def verify(activity_id: int, payload: VerifyActivityRequest, db=Depends(get_db), admin=Depends(require_admin)):
+def verify(activity_id: int, payload: VerifyActivityRequest, db=Depends(get_db), admin=Depends(require_regular_admin)):
     a = db.query(Activity).filter(Activity.id == activity_id).first()
     if not a:
         raise HTTPException(404, "Activity not found")

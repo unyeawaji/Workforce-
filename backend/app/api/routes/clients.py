@@ -28,7 +28,7 @@ from app.schemas.schemas import (
     ClientCreate, ClientWorkerAssign, ClientOut, WorkerLiveStatus, WorkerDailySummary,
     WorkerReviewCreate, WorkerReviewUpdate, WorkerReviewOut, WorkerReviewSummary,
 )
-from app.api.deps import require_admin, require_client, require_worker, get_current_user
+from app.api.deps import require_regular_admin, require_regular_admin, require_client, require_worker, get_current_user
 from app.core.security import get_password_hash
 from app.core.schedule_utils import logical_today
 from app.core.push import notify_user
@@ -303,7 +303,7 @@ def list_reviews_about_me(db: Session = Depends(get_db), worker=Depends(require_
 def list_team_reviews(
     worker_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     """Admin: all reviews clients have left for workers on this admin's team."""
     q = (
@@ -318,7 +318,7 @@ def list_team_reviews(
 
 
 @router.get("/reviews/summary", response_model=List[WorkerReviewSummary])
-def team_review_summary(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def team_review_summary(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     """Admin: average rating + review count per worker, for a quick leaderboard view."""
     team_workers = db.query(User).filter(User.admin_id == admin.id, User.role == UserRole.worker).all()
     if not team_workers:
@@ -365,7 +365,7 @@ def team_review_summary(db: Session = Depends(get_db), admin=Depends(require_adm
 # ── Admin: create client ───────────────────────────────────────────────────────
 
 @router.post("", response_model=ClientOut, status_code=201)
-def create_client(payload: ClientCreate, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def create_client(payload: ClientCreate, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(409, "Email already registered")
 
@@ -399,7 +399,7 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db), admin=De
 # ── Admin: list their clients ──────────────────────────────────────────────────
 
 @router.get("", response_model=List[ClientOut])
-def list_clients(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def list_clients(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     clients = db.query(User).filter(
         User.role == UserRole.client,
         User.admin_id == admin.id,
@@ -414,7 +414,7 @@ def assign_workers(
     client_id: int,
     payload: ClientWorkerAssign,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     client = db.query(User).filter(
         User.id == client_id,
@@ -443,7 +443,7 @@ def assign_workers(
 # ── Admin: delete client ───────────────────────────────────────────────────────
 
 @router.delete("/{client_id}", status_code=204)
-def delete_client(client_id: int, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def delete_client(client_id: int, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     client = db.query(User).filter(
         User.id == client_id,
         User.role == UserRole.client,
@@ -472,7 +472,7 @@ def reset_client_password(
     client_id: int,
     payload: PasswordResetRequest,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     """Admin: forcibly reset a client's password."""
     client = db.query(User).filter(

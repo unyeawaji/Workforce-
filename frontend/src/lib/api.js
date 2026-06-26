@@ -34,6 +34,7 @@ export const authApi = {
 
 export const usersApi = {
   list: (params) => api.get('/users', { params }),
+  listAdmins: () => api.get('/users/admins'),
   create: (data) => api.post('/users', data),
   update: (id, data) => api.patch(`/users/${id}`, data),
   delete: (id) => api.delete(`/users/${id}`),
@@ -98,12 +99,15 @@ export const profileApi = {
 }
 
 export const applicationsApi = {
-  listAdmins: () => api.get('/applications/admins'),
-  submit: (data) => api.post('/applications', data),
-  list: () => api.get('/applications'),
-  approve: (id) => api.post(`/applications/${id}/approve`),
-  reject: (id) => api.post(`/applications/${id}/reject`),
-  pendingCount: () => api.get('/applications/pending-count'),
+  listAdmins:       ()         => api.get('/applications/admins'),
+  catalog:          ()         => api.get('/applications/catalog'),
+  submit:           (data)     => api.post('/applications', data),
+  list:             ()         => api.get('/applications'),
+  approve:          (id)       => api.post(`/applications/${id}/approve`),
+  reject:           (id)       => api.post(`/applications/${id}/reject`),
+  pendingCount:     ()         => api.get('/applications/pending-count'),
+  getMyServices:    ()         => api.get('/applications/my-services'),
+  updateMyServices: (services) => api.patch('/applications/my-services', { services }),
 }
 
 export const clientsApi = {
@@ -147,3 +151,12 @@ export const invitesApi = {
   register: (data) => api.post('/invites/register', data),
 }
 
+export const sysApi = {
+  listAdmins:       ()           => api.get('/sys/admins'),
+  getWorkers:       (id)         => api.get(`/sys/admins/${id}/workers`),
+  getClients:       (id)         => api.get(`/sys/admins/${id}/clients`),
+  getShifts:        (id, params) => api.get(`/sys/admins/${id}/shifts`, { params }),
+  getActivities:    (id, params) => api.get(`/sys/admins/${id}/activities`, { params }),
+  updateAdmin:      (id, data)   => api.patch(`/sys/admins/${id}`, data),
+  deleteAdmin:      (id)         => api.delete(`/sys/admins/${id}`),
+}

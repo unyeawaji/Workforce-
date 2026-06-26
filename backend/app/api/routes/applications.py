@@ -15,13 +15,20 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.models import User, UserRole, JobApplication, ApplicationStatus
-from app.schemas.schemas import JobApplicationCreate, JobApplicationOut, AdminPublic, PendingCountOut
-from app.api.deps import require_admin
+from app.schemas.schemas import JobApplicationCreate, JobApplicationOut, AdminPublic, PendingCountOut, SERVICES_CATALOG
+from app.api.deps import require_admin, require_regular_admin
 from app.core.security import get_password_hash
 from app.core.push import notify_user
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 logger = logging.getLogger(__name__)
+
+
+def _parse_services(services_str: str | None) -> list[str]:
+    if not services_str:
+        return []
+    return [s.strip() for s in services_str.split(',') if s.strip()]
 
 
 def _notify_admin_new_application(db: Session, admin_id: int, applicant_name: str) -> None:
@@ -33,11 +40,28 @@ def _notify_admin_new_application(db: Session, admin_id: int, applicant_name: st
     )
 
 
+@router.get("/catalog")
+def services_catalog():
+    """Public: returns the full services catalog so the frontend can display labels/descriptions."""
+    return SERVICES_CATALOG
+
+
 @router.get("/admins", response_model=List[AdminPublic])
 def list_admins_public(db: Session = Depends(get_db)):
-    """Public: returns all admin names+IDs for the apply-page dropdown."""
-    admins = db.query(User).filter(User.role == UserRole.admin, User.is_active == True).all()
-    return [AdminPublic.model_validate(a) for a in admins]
+    """Public: returns all active admin names+IDs+services for the apply-page."""
+    admins = db.query(User).filter(
+        User.role == UserRole.admin,
+        User.is_active == True,
+        User.is_system_admin == False,   # system admin is not a hireable team
+    ).all()
+    result = []
+    for a in admins:
+        result.append(AdminPublic(
+            id=a.id,
+            name=a.name,
+            services=_parse_services(a.services),
+        ))
+    return result
 
 
 @router.post("", response_model=JobApplicationOut, status_code=201)
@@ -68,6 +92,7 @@ def submit_application(payload: JobApplicationCreate, db: Session = Depends(get_
         email=payload.email,
         phone=payload.phone,
         cover_letter=payload.cover_letter,
+        position_type=payload.position_type,
     )
     db.add(application)
     db.commit()
@@ -142,3 +167,33 @@ def reject_application(app_id: int, db: Session = Depends(get_db), admin=Depends
     db.refresh(app)
     logger.info("Admin %s rejected application %s", admin.id, app_id)
     return JobApplicationOut.model_validate(app)
+
+
+# ── Admin: manage their team's services ───────────────────────────────────────
+
+class ServicesUpdate(BaseModel):
+    services: list[str]   # list of service keys from SERVICES_CATALOG
+
+
+@router.get("/my-services")
+def get_my_services(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
+    """Regular admin: get their current services configuration."""
+    return {"services": _parse_services(admin.services)}
+
+
+@router.patch("/my-services")
+def update_my_services(
+    payload: ServicesUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_regular_admin),
+):
+    """Regular admin: set which services their team offers."""
+    # Validate keys
+    invalid = [s for s in payload.services if s not in SERVICES_CATALOG]
+    if invalid:
+        raise HTTPException(400, f"Unknown service keys: {invalid}")
+    admin_row = db.query(User).filter(User.id == admin.id).first()
+    admin_row.services = ','.join(payload.services)
+    db.commit()
+    logger.info("Admin %s updated services to: %s", admin.id, admin_row.services)
+    return {"services": _parse_services(admin_row.services)}

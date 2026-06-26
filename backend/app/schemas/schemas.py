@@ -48,6 +48,8 @@ class UserOut(BaseModel):
     role: UserRole
     department: Optional[str]
     is_active: bool
+    is_system_admin: bool = False
+    services: List[str] = []             # admin's offered services (empty for workers/clients)
     client_name: Optional[str] = None
     admin_id: Optional[int] = None
     admin_name: Optional[str] = None   # populated for workers/clients — who manages this account
@@ -58,9 +60,32 @@ class UserOut(BaseModel):
 
 
 # ── Admin info (public — for apply page dropdown) ─────────────────────────────
+# All available service types offered across teams
+SERVICES_CATALOG = {
+    "account_recovery":    {"label": "Account Recovery",      "desc": "Recovering suspended or banned Aether/Outlier accounts",        "platform": "Aether · Outlier", "emoji": "🔓"},
+    "assessment":          {"label": "Assessment",             "desc": "Conducting onboarding & quality assessments on Aether",         "platform": "Aether · Outlier", "emoji": "📝"},
+    "tasker":              {"label": "Tasker",                 "desc": "Completing AI training tasks and data annotation on Outlier",    "platform": "Outlier",          "emoji": "✅"},
+    "onboarding":          {"label": "Onboarding",             "desc": "Guiding new contractors through platform onboarding on Aether",  "platform": "Aether",           "emoji": "🚀"},
+}
+
 class AdminPublic(BaseModel):
     id: int
     name: str
+    services: List[str] = []   # list of service keys from SERVICES_CATALOG
+    model_config = {"from_attributes": True}
+
+
+# ── System admin: summary of each regular admin's team ────────────────────────
+class AdminTeamSummary(BaseModel):
+    id: int
+    name: str
+    email: str
+    is_active: bool
+    created_at: datetime
+    worker_count: int
+    client_count: int
+    active_today: int = 0        # workers currently clocked in
+    pending_activities: int = 0  # unreviewed activity submissions
     model_config = {"from_attributes": True}
 
 
@@ -331,6 +356,7 @@ class JobApplicationCreate(BaseModel):
     phone: Optional[str] = None
     cover_letter: Optional[str] = None
     admin_id: int            # which admin/team they're applying to
+    position_type: str = "tasker"   # 'tasker' | 'onboarding_assessment'
 
 
 class JobApplicationOut(BaseModel):
@@ -341,6 +367,7 @@ class JobApplicationOut(BaseModel):
     email: str
     phone: Optional[str]
     cover_letter: Optional[str]
+    position_type: str = "tasker"
     status: ApplicationStatus
     applied_at: datetime
     reviewed_at: Optional[datetime]

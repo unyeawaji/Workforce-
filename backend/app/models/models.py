@@ -52,6 +52,14 @@ class User(Base):
     deactivated_reason = Column(String(500), nullable=True)
     deactivated_at = Column(DateTime(timezone=True), nullable=True)
 
+    # System admin flag — only the seeded super-admin has this set.
+    # System admins can invite other admins but cannot have workers/clients of their own.
+    is_system_admin = Column(Boolean, default=False, nullable=False)
+
+    # Services this admin's team offers — comma-separated service keys.
+    # e.g. "account_recovery,assessment"  (only meaningful for admin-role rows)
+    services = Column(Text, nullable=True)
+
     # Siloing: workers and clients belong to one admin.
     # NULL for admin rows (admins are top-level).
     admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -94,6 +102,7 @@ class JobApplication(Base):
     email = Column(String(255), nullable=False)
     phone = Column(String(50), nullable=True)
     cover_letter = Column(Text, nullable=True)
+    position_type = Column(String(60), nullable=False, default='tasker')  # 'tasker' | 'onboarding_assessment'
     status = Column(SAEnum(ApplicationStatus), nullable=False, default=ApplicationStatus.pending)
     applied_at = Column(DateTime(timezone=True), default=_now)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

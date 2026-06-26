@@ -9,6 +9,7 @@ from app.core.limiter import limiter
 from app.core.security import get_password_hash
 from app.db.database import engine, Base, SessionLocal
 from app.api.routes import auth, users, activities, shifts, analytics, payroll, schedule, push
+from app.api.routes import applications, clients, invites, sys as sys_routes
 from app.api.routes import applications, clients, invites
 from app.core.scheduler import start_scheduler, stop_scheduler
 
@@ -35,6 +36,7 @@ def seed_admin():
                 password_hash=get_password_hash(admin_password),
                 role=UserRole.admin,
                 department="Administration",
+                is_system_admin=True,
             ))
             db.commit()
             logger.info("Default admin created: %s", admin_email)
@@ -97,6 +99,12 @@ def run_migrations():
         # NEW: offboarding audit trail
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_reason VARCHAR(500)",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ",
+        # System admin flag — only the seeded super-admin; cannot own workers/clients
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_system_admin BOOLEAN NOT NULL DEFAULT FALSE",
+        # Position type applicants select (tasker | onboarding_assessment)
+        "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS position_type VARCHAR(60) NOT NULL DEFAULT 'tasker'",
+        # Services an admin's team offers — stored as comma-separated string, e.g. "account_recovery,assessment"
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS services TEXT",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -154,6 +162,7 @@ app.include_router(push.router, prefix=PREFIX)
 app.include_router(applications.router, prefix=PREFIX)
 app.include_router(clients.router, prefix=PREFIX)
 app.include_router(invites.router, prefix=PREFIX)
+app.include_router(sys_routes.router, prefix=PREFIX)
 
 
 @app.get("/health")

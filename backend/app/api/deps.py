@@ -35,6 +35,22 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def require_system_admin(user: User = Depends(get_current_user)) -> User:
+    """Only the system (super) admin can call this endpoint."""
+    if user.role != UserRole.admin or not user.is_system_admin:
+        raise HTTPException(status_code=403, detail="System admin access required")
+    return user
+
+
+def require_regular_admin(user: User = Depends(get_current_user)) -> User:
+    """Only non-system admins (those who manage workers) can call this endpoint."""
+    if user.role != UserRole.admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if user.is_system_admin:
+        raise HTTPException(status_code=403, detail="System admin cannot perform this action")
+    return user
+
+
 def require_worker(user: User = Depends(get_current_user)) -> User:
     if user.role != UserRole.worker:
         raise HTTPException(status_code=403, detail="Worker access required")

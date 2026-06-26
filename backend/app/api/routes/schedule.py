@@ -9,7 +9,7 @@ from app.schemas.schemas import (
     DayScheduleOut, DayScheduleUpdate,
     HolidayCreate, HolidayOut, WorkWindowStatus,
 )
-from app.api.deps import require_admin, get_current_user
+from app.api.deps import require_regular_admin, require_regular_admin, get_current_user
 from app.core.schedule_utils import (
     DAY_NAMES,
     get_work_window_status,
@@ -29,7 +29,7 @@ def get_work_window(db: Session = Depends(get_db), user=Depends(get_current_user
 
 
 @router.get("/days", response_model=List[DayScheduleOut])
-def get_day_schedules(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def get_day_schedules(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     seed_default_schedule(db)
     return [DayScheduleOut.model_validate(s)
             for s in db.query(DaySchedule).order_by(DaySchedule.day_of_week).all()]
@@ -40,7 +40,7 @@ def update_day_schedule(
     day_of_week: int,
     payload: DayScheduleUpdate,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     if not 0 <= day_of_week <= 6:
         raise HTTPException(400, "day_of_week must be 0 (Mon) to 6 (Sun)")
@@ -60,7 +60,7 @@ def update_day_schedule(
 
 
 @router.get("/holidays", response_model=List[HolidayOut])
-def list_holidays(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def list_holidays(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     return [HolidayOut.model_validate(h)
             for h in db.query(Holiday).order_by(Holiday.date).all()]
 
@@ -69,7 +69,7 @@ def list_holidays(db: Session = Depends(get_db), admin=Depends(require_admin)):
 def add_holiday(
     payload: HolidayCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     if db.query(Holiday).filter(Holiday.date == payload.date).first():
         raise HTTPException(400, "A holiday already exists for this date")
@@ -85,7 +85,7 @@ def add_holiday(
 def delete_holiday(
     holiday_id: int,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
     if not h:

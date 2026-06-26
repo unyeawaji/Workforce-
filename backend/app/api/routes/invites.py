@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import AdminInvite, User, UserRole
 from app.schemas.schemas import InviteCreate, InviteOut, InviteRegister, UserOut
-from app.api.deps import require_admin
+from app.api.deps import require_system_admin
 from app.core.security import get_password_hash
 
 router = APIRouter(prefix="/invites", tags=["Invites"])
@@ -92,7 +92,7 @@ def register_via_invite(payload: InviteRegister, db: Session = Depends(get_db)):
 def create_invite(
     payload: InviteCreate,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_system_admin),
 ):
     token = secrets.token_urlsafe(32)
     invite = AdminInvite(
@@ -111,7 +111,7 @@ def create_invite(
 # ── Admin: list own invites ────────────────────────────────────────────────────
 
 @router.get("", response_model=List[InviteOut])
-def list_invites(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def list_invites(db: Session = Depends(get_db), admin=Depends(require_system_admin)):
     invites = (
         db.query(AdminInvite)
         .filter(AdminInvite.created_by == admin.id)
@@ -127,7 +127,7 @@ def list_invites(db: Session = Depends(get_db), admin=Depends(require_admin)):
 def revoke_invite(
     invite_id: int,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_system_admin),
 ):
     invite = db.query(AdminInvite).filter(
         AdminInvite.id == invite_id,

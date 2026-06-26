@@ -4,22 +4,24 @@ import { getErrorMessage } from '../lib/utils'
 
 // ── Activities ────────────────────────────────────────────────────────────────
 export function useActivities(params = {}) {
+  const skip = params === null
   const [activities, setActivities] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!skip)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
+    if (skip) return
     setLoading(true)
     setError(null)
     try {
-      const { data } = await activitiesApi.list(params)
+      const { data } = await activitiesApi.list(params || {})
       setActivities(data)
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [JSON.stringify(params)])
+  }, [skip, JSON.stringify(params)])
 
   useEffect(() => { load() }, [load])
 
@@ -85,11 +87,12 @@ export function useTodayShift() {
 }
 
 // ── Workers ───────────────────────────────────────────────────────────────────
-export function useWorkers() {
+export function useWorkers(skip = false) {
   const [workers, setWorkers] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!skip)
 
   const load = async () => {
+    if (skip) return
     setLoading(true)
     try {
       const { data } = await usersApi.list({ role: 'worker' })
@@ -99,7 +102,7 @@ export function useWorkers() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [skip])
 
   const create = async (payload) => {
     const { data } = await usersApi.create(payload)
@@ -124,12 +127,13 @@ export function useWorkers() {
 }
 
 // ── Dashboard stats ───────────────────────────────────────────────────────────
-export function useDashboardStats() {
+export function useDashboardStats(skip = false) {
   const [stats, setStats] = useState(null)
   const [weekly, setWeekly] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!skip)
 
   const load = async () => {
+    if (skip) return
     setLoading(true)
     try {
       const [s, w] = await Promise.all([analyticsApi.dashboard(), analyticsApi.weekly()])
@@ -140,7 +144,7 @@ export function useDashboardStats() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [skip])
 
   return { stats, weekly, loading, refetch: load }
 }

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.models import DepartmentRate, Shift, CheckIn, User, UserRole
 from app.schemas.schemas import DepartmentRateOut, DepartmentRateUpsert, WorkerPayrollOut
-from app.api.deps import require_admin, get_current_user
+from app.api.deps import require_regular_admin, require_regular_admin, get_current_user
 from app.core.schedule_utils import get_or_create_work_schedule
 
 router = APIRouter(prefix="/payroll", tags=["Payroll"])
@@ -62,7 +62,7 @@ def _worker_payroll(
 
 
 @router.get("/rates", response_model=List[DepartmentRateOut])
-def list_rates(db: Session = Depends(get_db), admin=Depends(require_admin)):
+def list_rates(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     currency = _get_currency(db)
     rates = db.query(DepartmentRate).all()
     # Keep the stored row's currency in sync with the global setting, in case it
@@ -77,7 +77,7 @@ def list_rates(db: Session = Depends(get_db), admin=Depends(require_admin)):
 
 
 @router.post("/rates", response_model=DepartmentRateOut)
-def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     if payload.hourly_rate_cents < 0:
         raise HTTPException(400, "Hourly rate cannot be negative")
     currency = _get_currency(db)  # currency is no longer set per-rate — always the admin-wide value
@@ -94,7 +94,7 @@ def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), ad
 
 
 @router.delete("/rates/{department}")
-def delete_rate(department: str, db: Session = Depends(get_db), admin=Depends(require_admin)):
+def delete_rate(department: str, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     rate = db.query(DepartmentRate).filter(DepartmentRate.department == department).first()
     if not rate:
         raise HTTPException(404, "Rate not found")
@@ -108,7 +108,7 @@ def payroll_summary(
     date_to: Optional[date] = None,
     department: Optional[str] = None,
     db: Session = Depends(get_db),
-    admin=Depends(require_admin),
+    admin=Depends(require_regular_admin),
 ):
     # Active workers always show. Deactivated workers only show if they have
     # shift hours within the requested period — otherwise every former worker
