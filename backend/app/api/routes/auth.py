@@ -22,7 +22,7 @@ def _user_out_with_admin(user: User, db: Session) -> UserOut:
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("20/minute", exempt_when=lambda request: request.method == "OPTIONS")
+@limiter.limit("20/minute")
 def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.password_hash):

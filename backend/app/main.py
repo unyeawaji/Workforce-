@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
@@ -155,6 +156,29 @@ app = FastAPI(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.middleware("http")
+async def handle_options_preflight(request: Request, call_next):
+    """
+    Starlette's CORSMiddleware returns 400 for OPTIONS requests whose Origin
+    isn't in ALLOWED_ORIGINS (e.g. requests with no Origin header, or from
+    a browser dev tool). This middleware intercepts all OPTIONS and returns
+    200 immediately so CORS preflights always succeed. Security is enforced
+    by JWT on actual API calls — a 200 preflight doesn't grant any data access.
+    """
+    if request.method == "OPTIONS":
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600",
+            },
+        )
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
