@@ -50,6 +50,14 @@ class UserOut(BaseModel):
     is_active: bool
     is_system_admin: bool = False
     services: List[str] = []             # admin's offered services (empty for workers/clients)
+
+    @field_validator("services", mode="before")
+    @classmethod
+    def coerce_null_services(cls, v):
+        """DB rows created before the services column existed have NULL — treat as empty list."""
+        if v is None:
+            return []
+        return v
     client_name: Optional[str] = None
     admin_id: Optional[int] = None
     admin_name: Optional[str] = None   # populated for workers/clients — who manages this account
@@ -73,6 +81,13 @@ class AdminPublic(BaseModel):
     name: str
     services: List[str] = []       # list of service keys from SERVICES_CATALOG
     is_system_admin: bool = False  # exposed so frontend can double-filter
+
+    @field_validator("services", mode="before")
+    @classmethod
+    def coerce_null_services(cls, v):
+        if v is None:
+            return []
+        return v
     model_config = {"from_attributes": True}
 
 
