@@ -96,7 +96,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <div style={{ fontSize: 34, fontFamily: 'var(--font-display)', fontStyle: 'italic', color: 'var(--text)', lineHeight: 1.2 }}>
-            Track work.<br />Verify results.<br /><span style={{ color: 'var(--primary)', fontWeight: 700, fontStyle: 'normal' }}>Powered by Neural.</span>
+            Track work.<br />Verify results.
           </div>
         </div>
 

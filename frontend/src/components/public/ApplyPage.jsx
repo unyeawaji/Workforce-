@@ -193,10 +193,10 @@ export default function ApplyPage() {
           We're hiring · Aether Project
         </div>
         <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: -1.2, lineHeight: 1.1, marginBottom: 16 }}>
-          Join a team on Outlier
+          Join a team on AI Induction
         </h1>
         <p style={{ fontSize: 16, color: 'var(--text3)', lineHeight: 1.7, maxWidth: 520, margin: '0 auto 40px' }}>
-          We offer positions in AI task work and contractor assessment for the Aether project on Outlier. Select a role, pick a team, and apply in minutes.
+          We offer positions in AI task work and contractor assessment for the Aether project. Select a role, pick a team, and apply in minutes.
         </p>
 
         {/* Step indicator */}

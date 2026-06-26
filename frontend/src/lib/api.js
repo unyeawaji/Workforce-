@@ -115,6 +115,7 @@ export const clientsApi = {
   assignWorkers: (id, workerIds) => api.patch(`/clients/${id}/workers`, { worker_ids: workerIds }),
   delete: (id) => api.delete(`/clients/${id}`),
   resetPassword: (id, newPassword) => api.post(`/clients/${id}/reset-password`, { new_password: newPassword }),
+  suspend:       (id, reason)      => api.patch(`/clients/${id}/suspend`, { reason }),
   feed: () => api.get('/clients/me/feed'),
   history: (params) => api.get('/clients/me/history', { params }),
   submitReview: (workerId, rating, comment) => api.post('/clients/me/reviews', { worker_id: workerId, rating, comment }),

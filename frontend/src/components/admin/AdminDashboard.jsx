@@ -972,6 +972,35 @@ function ClientsPanel({ workers }) {
   const toggleWorker = (id) =>
     setAssignIds(ids => ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
 
+  // ── Suspend / reinstate ───────────────────────────────────────────────────
+  const [suspendTarget, setSuspendTarget]   = useState(null)
+  const [suspendReason, setSuspendReason]   = useState('')
+  const [suspending, setSuspending]         = useState(false)
+  const [suspendError, setSuspendError]     = useState('')
+
+  const handleSuspendClick = (client) => {
+    if (!client.is_active) {
+      // Reinstate immediately — no reason needed
+      clientsApi.suspend(client.id, null).then(load).catch(() => setError('Failed to reinstate client'))
+    } else {
+      setSuspendTarget(client)
+      setSuspendReason('')
+      setSuspendError('')
+    }
+  }
+
+  const confirmSuspend = async () => {
+    if (!suspendTarget) return
+    setSuspending(true); setSuspendError('')
+    try {
+      await clientsApi.suspend(suspendTarget.id, suspendReason.trim() || null)
+      setSuspendTarget(null)
+      await load()
+    } catch (e) {
+      setSuspendError(e.response?.data?.detail || 'Failed to suspend client')
+    } finally { setSuspending(false) }
+  }
+
   const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-sans)' }
 
   return (
@@ -1046,6 +1075,11 @@ function ClientsPanel({ workers }) {
                 <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
                   {client.assigned_worker_ids?.length || 0} worker{(client.assigned_worker_ids?.length || 0) !== 1 ? 's' : ''} assigned
                 </div>
+                {!client.is_active && (
+                  <div style={{ fontSize: 11, color: 'var(--error, #ef4444)', marginTop: 4, fontWeight: 500 }}>
+                    Suspended{client.deactivated_reason ? `: ${client.deactivated_reason}` : ''}
+                  </div>
+                )}
                 {client.admin_name && (
                   <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -1056,6 +1090,11 @@ function ClientsPanel({ workers }) {
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                 <Button variant="secondary" size="sm" onClick={() => openAssign(client)}>Edit Workers</Button>
                 <Button variant="secondary" size="sm" onClick={() => { setResettingPw(client.id); setNewPw(''); setPwMsg('') }}>Reset Password</Button>
+                <Button
+                  variant={client.is_active ? 'danger' : 'primary'}
+                  size="sm"
+                  onClick={() => handleSuspendClick(client)}
+                >{client.is_active ? 'Suspend' : 'Reinstate'}</Button>
                 <Button variant="danger" size="sm" onClick={() => handleDelete(client.id)}>Delete</Button>
               </div>
             </div>
@@ -1088,6 +1127,30 @@ function ClientsPanel({ workers }) {
       )}
 
       {/* Assign-workers modal */}
+
+      {/* Suspend client modal */}
+      <Modal open={!!suspendTarget} onClose={() => setSuspendTarget(null)} title={`Suspend ${suspendTarget?.name || ''}`}>
+        <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 14 }}>
+          This will deactivate the client account and close any open worker shifts associated with this client immediately.
+          The client will receive a notification.
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 6 }}>Reason (optional)</label>
+          <input
+            style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-sans)' }}
+            placeholder="e.g. Outlier account suspended"
+            value={suspendReason}
+            onChange={e => setSuspendReason(e.target.value)}
+          />
+        </div>
+        {suspendError && <Alert type="error" style={{ marginBottom: 12 }}>{suspendError}</Alert>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <Button variant="danger" onClick={confirmSuspend} disabled={suspending}>
+            {suspending ? <><Spinner size={13} color="#fff" /> Suspending…</> : 'Suspend Client'}
+          </Button>
+          <Button variant="secondary" onClick={() => setSuspendTarget(null)}>Cancel</Button>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -2378,7 +2441,7 @@ export default function AdminDashboard() {
             <div>
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 26, fontFamily: 'var(--font-display)', fontStyle: 'italic', marginBottom: 3 }}>
-                  Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : new Date().getHours() < 21 ? 'evening' : 'night'}, {user?.name?.split(' ')[0]} 👋
+                  Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : new Date().getHours() < 21 ? 'evening' : 'night'}, {user?.name?.split(' ')[0]}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text3)' }}>
                   {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

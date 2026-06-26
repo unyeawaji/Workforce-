@@ -414,6 +414,8 @@ class ClientOut(BaseModel):
     role: UserRole
     department: Optional[str]
     is_active: bool
+    deactivated_reason: Optional[str] = None
+    deactivated_at: Optional[datetime] = None
     admin_id: Optional[int] = None
     admin_name: Optional[str] = None
     created_at: datetime

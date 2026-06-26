@@ -23,7 +23,7 @@ from sqlalchemy import func
 
 from pydantic import BaseModel, field_validator
 from app.db.database import get_db
-from app.models.models import User, UserRole, ClientWorker, Shift, CheckIn, WorkerReview
+from app.models.models import User, UserRole, ClientWorker, Shift, CheckIn, WorkerReview, PushSubscription
 from app.schemas.schemas import (
     ClientCreate, ClientWorkerAssign, ClientOut, WorkerLiveStatus, WorkerDailySummary,
     WorkerReviewCreate, WorkerReviewUpdate, WorkerReviewOut, WorkerReviewSummary,
@@ -438,6 +438,104 @@ def assign_workers(
     db.commit()
     logger.info("Admin %s updated workers for client %s: %s", admin.id, client_id, payload.worker_ids)
     return {"client_id": client_id, "worker_ids": payload.worker_ids}
+
+
+# ── Admin: suspend / reinstate a client ──────────────────────────────────────
+
+class ClientSuspendRequest(BaseModel):
+    reason: Optional[str] = None   # required when suspending, ignored when reinstating
+
+@router.patch("/{client_id}/suspend", response_model=ClientOut)
+def suspend_client(
+    client_id: int,
+    payload: ClientSuspendRequest,
+    db: Session = Depends(get_db),
+    admin=Depends(require_regular_admin),
+):
+    """
+    Admin: suspend or reinstate a client account.
+
+    On suspension:
+    - Sets is_active = False with an audit timestamp + reason.
+    - Closes any open shifts for workers assigned to this client
+      so hourly pay stops accumulating immediately.
+    - Sends a push notification to the client so they know their
+      account has been suspended.
+
+    On reinstatement:
+    - Clears the suspension record and re-enables login.
+    """
+    client = db.query(User).filter(
+        User.id == client_id,
+        User.role == UserRole.client,
+        User.admin_id == admin.id,
+    ).first()
+    if not client:
+        raise HTTPException(404, "Client not found")
+
+    now = datetime.now(timezone.utc)
+
+    if client.is_active:
+        # ── Suspending ────────────────────────────────────────────────────────
+        client.is_active = False
+        client.deactivated_reason = payload.reason or "Account suspended by manager"
+        client.deactivated_at = now
+
+        # Find workers assigned to this client and close their open shifts
+        assigned_worker_ids = [
+            cw.worker_id for cw in
+            db.query(ClientWorker).filter(ClientWorker.client_id == client_id).all()
+        ]
+        closed_shifts = 0
+        for wid in assigned_worker_ids:
+            open_shift = db.query(Shift).filter(
+                Shift.worker_id == wid,
+                Shift.clock_in.isnot(None),
+                Shift.clock_out.is_(None),
+            ).first()
+            if open_shift:
+                open_shift.clock_out = now
+                open_shift.total_minutes = max(
+                    0, int((now - open_shift.clock_in).total_seconds() / 60)
+                )
+                closed_shifts += 1
+
+        db.commit()
+        logger.info(
+            "Admin %s suspended client %s — closed %d open shift(s)",
+            admin.id, client_id, closed_shifts,
+        )
+
+        # Notify the client via push notification
+        notify_user(
+            db, client.id,
+            title="Account Suspended",
+            body=(
+                f"Your account has been suspended by your manager. "
+                f"Reason: {client.deactivated_reason}. "
+                "Please contact your manager for further information."
+            ),
+            url="/",
+        )
+
+    else:
+        # ── Reinstating ───────────────────────────────────────────────────────
+        client.is_active = True
+        client.deactivated_reason = None
+        client.deactivated_at = None
+        db.commit()
+        logger.info("Admin %s reinstated client %s", admin.id, client_id)
+
+        # Notify the client that they have been reinstated
+        notify_user(
+            db, client.id,
+            title="Account Reinstated",
+            body="Your account has been reinstated. You can now log in and access the portal.",
+            url="/",
+        )
+
+    db.refresh(client)
+    return _client_out(client, db, admin_name=admin.name)
 
 
 # ── Admin: delete client ───────────────────────────────────────────────────────
