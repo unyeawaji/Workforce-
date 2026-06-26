@@ -20,15 +20,30 @@ logger = logging.getLogger(__name__)
 
 
 def seed_admin():
+    """
+    Upsert the system admin account from env vars on every startup.
+    This ensures Railway env var changes (email/password) take effect
+    on the next deploy without needing to touch the DB manually.
+    """
     from app.models.models import User, UserRole
+    admin_email = settings.ADMIN_EMAIL
+    admin_password = settings.ADMIN_PASSWORD
+
+    if not admin_password:
+        logger.error("ADMIN_PASSWORD env var not set — system admin not created/updated.")
+        return
+
     db = SessionLocal()
     try:
-        if not db.query(User).filter(User.role == UserRole.admin).first():
-            admin_email = settings.ADMIN_EMAIL
-            admin_password = settings.ADMIN_PASSWORD
-            if not admin_password:
-                logger.error("ADMIN_PASSWORD env var not set — no default admin created.")
-                return
+        existing = db.query(User).filter(User.email == admin_email).first()
+        if existing:
+            # Always sync the password from env — so Railway env var changes apply on redeploy
+            existing.password_hash = get_password_hash(admin_password)
+            existing.is_system_admin = True
+            existing.is_active = True
+            db.commit()
+            logger.info("System admin credentials synced from env: %s", admin_email)
+        else:
             db.add(User(
                 name="System Admin",
                 email=admin_email,
@@ -38,7 +53,7 @@ def seed_admin():
                 is_system_admin=True,
             ))
             db.commit()
-            logger.info("Default admin created: %s", admin_email)
+            logger.info("System admin created: %s", admin_email)
     finally:
         db.close()
 
