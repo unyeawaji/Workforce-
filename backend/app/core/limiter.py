@@ -26,5 +26,4 @@ def _real_ip(request) -> str:
 
 
 
-# slowapi 0.1.9 calls exempt_when(request) — must accept one positional arg
-limiter = Limiter(key_func=_real_ip, exempt_when=lambda request: False)
+limiter = Limiter(key_func=_real_ip)
