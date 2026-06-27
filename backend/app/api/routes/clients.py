@@ -488,12 +488,17 @@ def suspend_client(
         ]
         closed_shifts = 0
         for wid in assigned_worker_ids:
-            open_shift = db.query(Shift).filter(
+            # .all() rather than .first(): a worker who forgot to clock out on
+            # a previous day, then clocked in again, could have more than one
+            # open shift at once. Closing only the first found would leave the
+            # other(s) silently still accruing pay after this "stop pay now"
+            # action — close every open shift for this worker, not just one.
+            open_shifts = db.query(Shift).filter(
                 Shift.worker_id == wid,
                 Shift.clock_in.isnot(None),
                 Shift.clock_out.is_(None),
-            ).first()
-            if open_shift:
+            ).all()
+            for open_shift in open_shifts:
                 open_shift.clock_out = now
                 open_shift.total_minutes = max(
                     0, int((now - open_shift.clock_in).total_seconds() / 60)

@@ -92,11 +92,15 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
     if data.get("is_active") is False and user.is_active:
         user.deactivated_reason = deactivation_reason
         user.deactivated_at = datetime.now(timezone.utc)
-        open_shift = db.query(Shift).filter(
+        # .all() rather than .first(): nothing prevents a worker who missed a
+        # clock-out on a prior day from having more than one open shift at
+        # once. Closing only the first found would leave the other(s)
+        # silently still "open" after offboarding.
+        open_shifts = db.query(Shift).filter(
             Shift.worker_id == user.id, Shift.clock_in.isnot(None), Shift.clock_out.is_(None),
-        ).first()
-        if open_shift:
-            now = datetime.now(timezone.utc)
+        ).all()
+        now = datetime.now(timezone.utc)
+        for open_shift in open_shifts:
             open_shift.clock_out = now
             open_shift.total_minutes = max(0, int((now - open_shift.clock_in).total_seconds() / 60))
             logger.info("Auto-closed open shift %s for deactivated worker %s", open_shift.id, user.id)

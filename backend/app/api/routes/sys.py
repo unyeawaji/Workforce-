@@ -24,6 +24,7 @@ from app.schemas.schemas import (
 )
 from app.api.deps import require_system_admin
 from app.core.security import get_password_hash
+from app.core.team import team_worker_ids
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/sys", tags=["System"])
@@ -43,15 +44,9 @@ def _get_regular_admin(admin_id: int, db: Session) -> User:
     return admin
 
 
-def _team_wids(admin_id: int, db: Session) -> list[int]:
-    return [r.id for r in db.query(User.id).filter(
-        User.admin_id == admin_id, User.role == UserRole.worker,
-    ).all()]
-
-
 def _build_summary(admin: User, db: Session) -> AdminTeamSummary:
     today = datetime.now(timezone.utc).date()
-    wids = _team_wids(admin.id, db)
+    wids = team_worker_ids(db, admin.id)
 
     worker_count = db.query(User).filter(
         User.admin_id == admin.id, User.role == UserRole.worker).count()
@@ -89,7 +84,17 @@ def list_all_admins(db: Session = Depends(get_db), _=Depends(require_system_admi
         .order_by(User.created_at.desc())
         .all()
     )
-    return [_build_summary(a, db) for a in admins]
+    summaries = []
+    for a in admins:
+        try:
+            summaries.append(_build_summary(a, db))
+        except Exception as e:
+            # One admin's team-stats query failing (e.g. a data issue specific
+            # to their rows) shouldn't 500 the whole dashboard for every other
+            # admin — log it and skip that one row instead.
+            db.rollback()  # clear the failed statement so the next admin's queries aren't blocked by it
+            logger.error("Failed to build summary for admin %s: %s", a.id, e)
+    return summaries
 
 
 # ── Workers under an admin ────────────────────────────────────────────────────
@@ -150,7 +155,7 @@ def list_admin_shifts(
     _=Depends(require_system_admin),
 ):
     admin = _get_regular_admin(admin_id, db)
-    wids = _team_wids(admin.id, db)
+    wids = team_worker_ids(db, admin.id)
     if not wids:
         return []
     q = (
@@ -177,7 +182,7 @@ def list_admin_activities(
     _=Depends(require_system_admin),
 ):
     admin = _get_regular_admin(admin_id, db)
-    wids = _team_wids(admin.id, db)
+    wids = team_worker_ids(db, admin.id)
     if not wids:
         return []
     q = (

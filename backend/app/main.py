@@ -105,6 +105,76 @@ def _run_migration_statement(conn, stmt: str, max_attempts: int = 5) -> None:
             return
 
 
+def sync_enum_types():
+    """
+    Postgres enum types are immutable from create_all()'s perspective — if a
+    Python enum (UserRole, ActivityStatus, etc.) gains a new member after the
+    Postgres type was first created, create_all() will never add it, since it
+    only creates types/tables that don't exist yet. That gap is exactly what
+    caused `psycopg2.errors.InvalidTextRepresentation: invalid input value
+    for enum userrole: "client"` — the userrole type was created before
+    'client' existed as a role, and nothing ever told Postgres about it.
+
+    This walks every (str, enum.Enum) used as a column type, compares its
+    members against what Postgres's pg_enum catalog actually has right now,
+    and adds whatever's missing.
+
+    ALTER TYPE ... ADD VALUE cannot run inside a transaction block on older
+    Postgres, and even where it's allowed (PG12+), the new value isn't usable
+    by any statement in the *same* transaction that added it. So this runs in
+    its own AUTOCOMMIT connection, separate from the savepoint-wrapped
+    run_migrations() loop, and completes — fully committed — before anything
+    else in startup can query against these enums.
+    """
+    from sqlalchemy import text
+    import enum as enum_module
+    from app.models import models as models_module
+
+    enum_classes = [
+        obj for obj in vars(models_module).values()
+        if isinstance(obj, type) and issubclass(obj, enum_module.Enum) and obj is not enum_module.Enum
+    ]
+
+    with engine.connect() as conn:
+        autocommit_conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        for enum_cls in enum_classes:
+            pg_type_name = enum_cls.__name__.lower()  # SQLAlchemy's default naming, matches no explicit name= override
+            try:
+                existing = autocommit_conn.execute(text(
+                    "SELECT e.enumlabel FROM pg_enum e "
+                    "JOIN pg_type t ON e.enumtypid = t.oid "
+                    "WHERE t.typname = :name"
+                ), {"name": pg_type_name}).fetchall()
+            except Exception as e:
+                # Catalog lookup itself failing (permissions, transient
+                # connection issue, etc.) shouldn't take down the whole
+                # startup, and shouldn't block syncing the *other* enums —
+                # log it and move on to the next enum class.
+                logger.error("Could not inspect enum type %s: %s", pg_type_name, e)
+                continue
+            if not existing:
+                # Type doesn't exist in Postgres at all yet — create_all() will
+                # handle creating it fresh (with every current member) the next
+                # time it runs, nothing to sync here.
+                continue
+            existing_values = {row[0] for row in existing}
+            for member in enum_cls:
+                if member.value not in existing_values:
+                    try:
+                        # ADD VALUE has no parameter-binding support — the value
+                        # is a fixed Python enum member, not user input, so a
+                        # direct (quoted) string is safe here. Not using the
+                        # IF NOT EXISTS clause (PG12+) since the pg_enum check
+                        # above already guarantees we only reach this branch
+                        # for values that are genuinely missing.
+                        autocommit_conn.execute(text(
+                            f"ALTER TYPE {pg_type_name} ADD VALUE '{member.value}'"
+                        ))
+                        logger.info("Enum %s: added missing value '%s'", pg_type_name, member.value)
+                    except Exception as e:
+                        logger.error("Could not add '%s' to enum %s: %s", member.value, pg_type_name, e)
+
+
 def run_migrations():
     migrations = [
         # Shift table
@@ -314,6 +384,55 @@ def run_migrations():
         "ALTER TABLE work_schedule ADD CONSTRAINT uq_work_schedule_admin UNIQUE (admin_id)",
         "ALTER TABLE day_schedules ADD CONSTRAINT uq_admin_day UNIQUE (admin_id, day_of_week)",
         "ALTER TABLE holidays ADD CONSTRAINT uq_admin_holiday_date UNIQUE (admin_id, date)",
+
+        # ── Per-admin department pay rates (was previously shared platform-wide) ──
+        # Same gap as work_schedule originally had, but worse: department was
+        # globally unique with zero ownership check on delete, so any admin
+        # could view, silently overwrite, or delete *any other* admin's rate
+        # for a department name they both happened to use (e.g. "Engineering").
+        "ALTER TABLE department_rates ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+        "ALTER TABLE department_rates DROP CONSTRAINT IF EXISTS department_rates_department_key",
+
+        # Backfill: clone every existing rate to every existing regular admin.
+        # Unlike work_schedule (a true one-row singleton), department_rates can
+        # have many rows (Engineering, Sales, ...), and there's no record of
+        # which admin originally created each one. Cloning all of them to every
+        # admin means nobody's payroll math silently changes the moment this
+        # migration runs — everyone keeps the rates they had, now correctly
+        # siloed, and can diverge from each other from here on.
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'department_rates' AND column_name = 'admin_id'
+            ) THEN
+                INSERT INTO department_rates (admin_id, department, hourly_rate_cents, currency)
+                SELECT u.id, g.department, g.hourly_rate_cents, g.currency
+                FROM users u
+                CROSS JOIN (
+                    SELECT * FROM department_rates WHERE admin_id IS NULL
+                ) g
+                WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM department_rates dr
+                      WHERE dr.admin_id = u.id AND dr.department = g.department
+                  );
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'department_rates' AND column_name = 'admin_id'
+            ) THEN
+                DELETE FROM department_rates WHERE admin_id IS NULL;
+            END IF;
+        END $$
+        """,
+        "ALTER TABLE department_rates ADD CONSTRAINT uq_admin_department_rate UNIQUE (admin_id, department)",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -326,6 +445,7 @@ def run_migrations():
 async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     Base.metadata.create_all(bind=engine)
+    sync_enum_types()
     run_migrations()
     seed_admin()
     start_scheduler()

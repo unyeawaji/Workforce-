@@ -64,7 +64,7 @@ def _worker_payroll(
 @router.get("/rates", response_model=List[DepartmentRateOut])
 def list_rates(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     currency = _get_currency(db, admin.id)
-    rates = db.query(DepartmentRate).all()
+    rates = db.query(DepartmentRate).filter(DepartmentRate.admin_id == admin.id).all()
     # Override the currency at serialisation time only — a GET must never write
     # to the DB. The stored row's currency is brought into sync at write time
     # instead, in upsert_rate().
@@ -81,12 +81,14 @@ def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), ad
     if payload.hourly_rate_cents < 0:
         raise HTTPException(400, "Hourly rate cannot be negative")
     currency = _get_currency(db, admin.id)  # currency is no longer set per-rate — always this team's value
-    rate = db.query(DepartmentRate).filter(DepartmentRate.department == payload.department).first()
+    rate = db.query(DepartmentRate).filter(
+        DepartmentRate.admin_id == admin.id, DepartmentRate.department == payload.department
+    ).first()
     if rate:
         rate.hourly_rate_cents = payload.hourly_rate_cents
         rate.currency = currency
     else:
-        rate = DepartmentRate(department=payload.department,
+        rate = DepartmentRate(admin_id=admin.id, department=payload.department,
                               hourly_rate_cents=payload.hourly_rate_cents, currency=currency)
         db.add(rate)
     db.commit(); db.refresh(rate)
@@ -95,7 +97,9 @@ def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), ad
 
 @router.delete("/rates/{department}")
 def delete_rate(department: str, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
-    rate = db.query(DepartmentRate).filter(DepartmentRate.department == department).first()
+    rate = db.query(DepartmentRate).filter(
+        DepartmentRate.admin_id == admin.id, DepartmentRate.department == department
+    ).first()
     if not rate:
         raise HTTPException(404, "Rate not found")
     db.delete(rate); db.commit()
@@ -136,7 +140,7 @@ def payroll_summary(
 
     workers = active_q.all() + inactive_with_hours_q.all()
 
-    rates = {r.department: r for r in db.query(DepartmentRate).all()}
+    rates = {r.department: r for r in db.query(DepartmentRate).filter(DepartmentRate.admin_id == admin.id).all()}
     currency = _get_currency(db, admin.id)
     results = [_worker_payroll(db, w, rates, currency, date_from, date_to) for w in workers]
     return sorted(results, key=lambda x: x.gross_pay_cents, reverse=True)
@@ -156,6 +160,6 @@ def my_payroll_summary(
     """
     if user.role != UserRole.worker:
         raise HTTPException(403, "Only workers can view their own payroll summary")
-    rates = {r.department: r for r in db.query(DepartmentRate).all()}
+    rates = {r.department: r for r in db.query(DepartmentRate).filter(DepartmentRate.admin_id == user.admin_id).all()}
     currency = _get_currency(db, user.admin_id)
     return _worker_payroll(db, user, rates, currency, date_from, date_to)

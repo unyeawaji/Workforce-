@@ -197,11 +197,13 @@ class CheckIn(Base):
 
 
 class DepartmentRate(Base):
-    """Hourly pay rate per department, set by admin."""
+    """Hourly pay rate per department, set by admin. One set of rates per admin team."""
     __tablename__ = "department_rates"
+    __table_args__ = (UniqueConstraint("admin_id", "department", name="uq_admin_department_rate"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    department = Column(String(100), unique=True, nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    department = Column(String(100), nullable=False, index=True)
     hourly_rate_cents = Column(Integer, nullable=False, default=0)
     currency = Column(String(10), default="USD", nullable=False)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
