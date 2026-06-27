@@ -59,8 +59,53 @@ def seed_admin():
         db.close()
 
 
-def run_migrations():
+def _run_migration_statement(conn, stmt: str, max_attempts: int = 5) -> None:
+    """
+    Execute one migration statement inside its own savepoint.
+
+    Deadlocks (Postgres error code 40P01) are expected and transient — they
+    happen when this migration runs while another instance of the app (an
+    old container mid-shutdown, or an overlapping deploy) is still holding a
+    lock on the same table. Postgres explicitly documents these as something
+    the client is expected to retry, not treat as a permanent failure — so
+    unlike a genuine "column already exists"/"constraint already exists"
+    skip, a deadlock gets a few short retries with backoff before we give up
+    on it. This matters here specifically because earlier statements in this
+    list (e.g. adding work_schedule.admin_id) are a hard prerequisite for
+    later ones (the backfill INSERTs, the DELETE cleanup, the new UNIQUE
+    constraint) — silently skipping just the first one used to strand the
+    table in a half-migrated state with no further signal.
+    """
     from sqlalchemy import text
+    import time
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            conn.execute(text("SAVEPOINT mig"))
+            conn.execute(text(stmt))
+            conn.execute(text("RELEASE SAVEPOINT mig"))
+            return
+        except Exception as e:
+            conn.execute(text("ROLLBACK TO SAVEPOINT mig"))
+            is_deadlock = "deadlock detected" in str(e).lower() or "40P01" in str(e)
+            if is_deadlock and attempt < max_attempts:
+                wait = 0.5 * (2 ** (attempt - 1))  # 0.5s, 1s, 2s, 4s
+                logger.warning(
+                    "Migration hit a deadlock (attempt %s/%s), retrying in %.1fs (%s)",
+                    attempt, max_attempts, wait, stmt.strip()[:60],
+                )
+                time.sleep(wait)
+                continue
+            # A deadlock that survived every retry is logged at ERROR (not the
+            # routine WARNING used for expected skips like "already exists"),
+            # since it means later statements that depend on this one will
+            # likely cascade into skips too — worth a human's attention.
+            level = logger.error if is_deadlock else logger.warning
+            level("Migration skipped (%s): %s", stmt.strip()[:60], e)
+            return
+
+
+def run_migrations():
     migrations = [
         # Shift table
         "ALTER TABLE shifts ADD COLUMN IF NOT EXISTS screenshot_url VARCHAR(500)",
@@ -154,55 +199,117 @@ def run_migrations():
         # into a fresh row for every existing admin who doesn't have one yet.
         # This runs once — once an admin has a row, ON CONFLICT-style guards
         # (the admin_id IS NULL filters below) make it a no-op on later restarts.
+        #
+        # Wrapped in a DO block that checks information_schema first: if the
+        # ADD COLUMN above somehow still didn't land after its retries (e.g.
+        # sustained lock contention), this becomes a clean no-op with one
+        # clear log-worthy skip, instead of cascading into a string of
+        # confusing "column does not exist" errors on every statement below
+        # that assumes the column is already there.
         """
-        INSERT INTO work_schedule
-            (admin_id, clock_in_deadline_hour, clock_in_deadline_minute,
-             checkin_interval_minutes, grace_period_minutes, currency)
-        SELECT u.id, g.clock_in_deadline_hour, g.clock_in_deadline_minute,
-               g.checkin_interval_minutes, g.grace_period_minutes, g.currency
-        FROM users u
-        CROSS JOIN (
-            SELECT * FROM work_schedule WHERE admin_id IS NULL ORDER BY id LIMIT 1
-        ) g
-        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
-          AND NOT EXISTS (SELECT 1 FROM work_schedule ws WHERE ws.admin_id = u.id)
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'work_schedule' AND column_name = 'admin_id'
+            ) THEN
+                INSERT INTO work_schedule
+                    (admin_id, clock_in_deadline_hour, clock_in_deadline_minute,
+                     checkin_interval_minutes, grace_period_minutes, currency)
+                SELECT u.id, g.clock_in_deadline_hour, g.clock_in_deadline_minute,
+                       g.checkin_interval_minutes, g.grace_period_minutes, g.currency
+                FROM users u
+                CROSS JOIN (
+                    SELECT * FROM work_schedule WHERE admin_id IS NULL ORDER BY id LIMIT 1
+                ) g
+                WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+                  AND NOT EXISTS (SELECT 1 FROM work_schedule ws WHERE ws.admin_id = u.id);
+            END IF;
+        END $$
         """,
         """
-        INSERT INTO day_schedules
-            (admin_id, day_of_week, is_working_day,
-             work_start_hour, work_start_minute, work_end_hour, work_end_minute)
-        SELECT u.id, g.day_of_week, g.is_working_day,
-               g.work_start_hour, g.work_start_minute, g.work_end_hour, g.work_end_minute
-        FROM users u
-        CROSS JOIN (
-            SELECT * FROM day_schedules WHERE admin_id IS NULL
-        ) g
-        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
-          AND NOT EXISTS (
-              SELECT 1 FROM day_schedules ds
-              WHERE ds.admin_id = u.id AND ds.day_of_week = g.day_of_week
-          )
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'day_schedules' AND column_name = 'admin_id'
+            ) THEN
+                INSERT INTO day_schedules
+                    (admin_id, day_of_week, is_working_day,
+                     work_start_hour, work_start_minute, work_end_hour, work_end_minute)
+                SELECT u.id, g.day_of_week, g.is_working_day,
+                       g.work_start_hour, g.work_start_minute, g.work_end_hour, g.work_end_minute
+                FROM users u
+                CROSS JOIN (
+                    SELECT * FROM day_schedules WHERE admin_id IS NULL
+                ) g
+                WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM day_schedules ds
+                      WHERE ds.admin_id = u.id AND ds.day_of_week = g.day_of_week
+                  );
+            END IF;
+        END $$
         """,
         # Holidays: clone any pre-existing global holidays to every admin too,
         # so nobody loses dates they'd already configured.
         """
-        INSERT INTO holidays (admin_id, date, name)
-        SELECT u.id, g.date, g.name
-        FROM users u
-        CROSS JOIN (
-            SELECT * FROM holidays WHERE admin_id IS NULL
-        ) g
-        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
-          AND NOT EXISTS (
-              SELECT 1 FROM holidays h WHERE h.admin_id = u.id AND h.date = g.date
-          )
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'holidays' AND column_name = 'admin_id'
+            ) THEN
+                INSERT INTO holidays (admin_id, date, name)
+                SELECT u.id, g.date, g.name
+                FROM users u
+                CROSS JOIN (
+                    SELECT * FROM holidays WHERE admin_id IS NULL
+                ) g
+                WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM holidays h WHERE h.admin_id = u.id AND h.date = g.date
+                  );
+            END IF;
+        END $$
         """,
         # The old global rows (admin_id IS NULL) are now superseded by the
         # per-admin clones above — remove them so they don't show up as an
         # orphaned "no admin" schedule that nothing queries against anymore.
-        "DELETE FROM work_schedule WHERE admin_id IS NULL",
-        "DELETE FROM day_schedules WHERE admin_id IS NULL",
-        "DELETE FROM holidays WHERE admin_id IS NULL",
+        # Same column-existence guard as above, same reasoning.
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'work_schedule' AND column_name = 'admin_id'
+            ) THEN
+                DELETE FROM work_schedule WHERE admin_id IS NULL;
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'day_schedules' AND column_name = 'admin_id'
+            ) THEN
+                DELETE FROM day_schedules WHERE admin_id IS NULL;
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'holidays' AND column_name = 'admin_id'
+            ) THEN
+                DELETE FROM holidays WHERE admin_id IS NULL;
+            END IF;
+        END $$
+        """,
         # Re-add uniqueness, now scoped per admin instead of globally.
         "ALTER TABLE work_schedule ADD CONSTRAINT uq_work_schedule_admin UNIQUE (admin_id)",
         "ALTER TABLE day_schedules ADD CONSTRAINT uq_admin_day UNIQUE (admin_id, day_of_week)",
@@ -210,13 +317,7 @@ def run_migrations():
     ]
     with engine.connect() as conn:
         for stmt in migrations:
-            try:
-                conn.execute(text("SAVEPOINT mig"))
-                conn.execute(text(stmt))
-                conn.execute(text("RELEASE SAVEPOINT mig"))
-            except Exception as e:
-                conn.execute(text("ROLLBACK TO SAVEPOINT mig"))
-                logger.warning("Migration skipped (%s): %s", stmt[:60], e)
+            _run_migration_statement(conn, stmt)
         conn.commit()
     logger.info("Startup migrations complete.")
 
