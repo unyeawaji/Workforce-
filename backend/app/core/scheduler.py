@@ -152,13 +152,13 @@ def _run_reminder():
             if overdue:
                 title = "⛔ Check-in overdue!"
                 body = (
-                    f"Your Outlier check-in is {int(abs(minutes_until_due))} min overdue. "
+                    f"Your check-in is {int(abs(minutes_until_due))} min overdue. "
                     "Your shift is now blocked — submit now."
                 )
             else:
                 title = "🔔 Check-in due in 5 minutes"
                 body = (
-                    "Time to submit your Outlier check-in. "
+                    "Time to submit your check-in. "
                     "Take a screenshot of your dashboard and report your task count."
                 )
 

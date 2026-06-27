@@ -30,15 +30,15 @@ const POSITIONS = [
     id: 'tasker',
     label: 'Tasker',
     emoji: '✅',
-    platform: 'Outlier · Aether Project',
-    desc: 'Complete AI training tasks and data annotation assignments on the Outlier platform.',
+    platform: 'AI training platforms',
+    desc: 'Complete AI training tasks and data annotation assignments.',
   },
   {
     id: 'onboarding_assessment',
     label: 'Onboarding & Assessment',
     emoji: '📝',
-    platform: 'Aether Project · Outlier',
-    desc: 'Conduct onboarding evaluations and quality assessments for new contractors on Aether.',
+    platform: 'AI training platforms',
+    desc: 'Conduct onboarding evaluations and quality assessments for new contractors.',
   },
 ]
 
@@ -190,13 +190,13 @@ export default function ApplyPage() {
       {/* Hero */}
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '56px 24px 0', textAlign: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--primary-s, rgba(99,102,241,.08))', color: 'var(--primary)', border: '1px solid var(--primary-b, rgba(99,102,241,.2))', borderRadius: 999, padding: '4px 14px', fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 20 }}>
-          We're hiring · Aether Project
+          We're hiring
         </div>
         <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: -1.2, lineHeight: 1.1, marginBottom: 16 }}>
           Join a team on AI Induction
         </h1>
         <p style={{ fontSize: 16, color: 'var(--text3)', lineHeight: 1.7, maxWidth: 520, margin: '0 auto 40px' }}>
-          We offer positions in AI task work and contractor assessment for the Aether project. Select a role, pick a team, and apply in minutes.
+          We offer positions in AI task work and contractor assessment. Select a role, pick a team, and apply in minutes.
         </p>
 
         {/* Step indicator */}
@@ -231,7 +231,7 @@ export default function ApplyPage() {
         {step === 1 && (
           <div>
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>What type of role are you applying for?</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Both roles are remote, flexible, and based on the Outlier / Aether platform.</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Both roles are remote and flexible.</div>
             {POSITIONS.map(pos => (
               <div
                 key={pos.id}
@@ -265,10 +265,10 @@ export default function ApplyPage() {
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)', marginBottom: 14 }}>What you'll be doing</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 {[
-                  { emoji: '🔓', title: 'Account Recovery', desc: 'Help suspended or banned Aether contractors restore access to their accounts.' },
-                  { emoji: '📝', title: 'Assessment', desc: 'Evaluate and score contractor submissions on the Aether / Outlier platform.' },
+                  { emoji: '🔓', title: 'Account Recovery', desc: 'Help suspended or banned contractors restore access to their accounts.' },
+                  { emoji: '📝', title: 'Assessment', desc: 'Evaluate and score contractor submissions.' },
                   { emoji: '✅', title: 'Task Completion', desc: 'Complete AI training data tasks — annotation, ranking, and generation.' },
-                  { emoji: '🚀', title: 'Onboarding', desc: 'Guide new contractors through the Aether platform setup and first tasks.' },
+                  { emoji: '🚀', title: 'Onboarding', desc: 'Guide new contractors through platform setup and first tasks.' },
                 ].map(({ emoji, title, desc }) => (
                   <div key={title} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '14px 16px' }}>
                     <div style={{ fontSize: 20, marginBottom: 6 }}>{emoji}</div>
@@ -374,7 +374,7 @@ export default function ApplyPage() {
             <Field label="Why do you want to join this team? (optional)">
               <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }}
                 value={form.cover_letter} onChange={set('cover_letter')}
-                placeholder="Tell us a bit about your experience with Outlier or Aether, and why you're a good fit…"
+                placeholder="Tell us a bit about your relevant experience, and why you're a good fit…"
                 onFocus={e => e.target.style.borderColor = 'var(--primary)'}
                 onBlur={e => e.target.style.borderColor = 'var(--border)'} />
             </Field>

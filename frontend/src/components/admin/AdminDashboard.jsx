@@ -617,7 +617,7 @@ function PayrollPanel({ workers }) {
         {[
           { label: 'Total Payroll', value: totalPayrollDisplay, color: 'var(--emerald)', wide: currencyKeys.length > 1 },
           { label: 'Total Hours', value: `${totalHours.toFixed(1)}h`, color: 'var(--primary)' },
-          { label: 'Outlier Tasks', value: totalTasks, color: 'var(--violet)' },
+          { label: 'Tasks Completed', value: totalTasks, color: 'var(--violet)' },
           { label: 'Workers', value: payroll.length, color: 'var(--text3)' },
         ].map(c => (
           <div key={c.label} style={{ padding: '10px 18px', borderRadius: 'var(--r)', background: 'var(--surface2)', border: '1px solid var(--border)', textAlign: 'center', flex: c.wide ? '2 1 220px' : '1 1 100px' }}>
@@ -669,7 +669,7 @@ function PayrollPanel({ workers }) {
             <span>Hours: <strong style={{ color: 'var(--primary)' }}>{w.total_hours}h</strong></span>
             <span>Shifts: <strong style={{ color: 'var(--text)' }}>{w.shift_count}</strong></span>
             <span>Check-ins: <strong style={{ color: 'var(--text)' }}>{w.check_in_count}</strong></span>
-            <span>Outlier Tasks: <strong style={{ color: 'var(--violet)' }}>{w.outlier_tasks_total}</strong></span>
+            <span>Tasks Completed: <strong style={{ color: 'var(--violet)' }}>{w.outlier_tasks_total}</strong></span>
           </div>
           {w.hourly_rate_cents === 0 && (
             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--amber)', fontFamily: 'var(--font-mono)' }}>
@@ -1138,7 +1138,7 @@ function ClientsPanel({ workers }) {
           <label style={{ fontSize: 12, color: 'var(--text3)', display: 'block', marginBottom: 6 }}>Reason (optional)</label>
           <input
             style={{ width: '100%', padding: '9px 12px', borderRadius: 'var(--r)', border: '1.5px solid var(--border)', background: 'var(--surface2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-sans)' }}
-            placeholder="e.g. Outlier account suspended"
+            placeholder="e.g. Account suspended pending review"
             value={suspendReason}
             onChange={e => setSuspendReason(e.target.value)}
           />
@@ -1317,6 +1317,7 @@ function InvitePanel() {
 // ── Settings Panel ────────────────────────────────────────────────────────────
 function SettingsPanel() {
   const [schedule, setSchedule] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [form, setForm] = useState({ clock_in_deadline_hour: 9, clock_in_deadline_minute: 0, checkin_interval_minutes: 120, grace_period_minutes: 15, currency: 'USD' })
@@ -1327,14 +1328,21 @@ function SettingsPanel() {
   const [savedServices, setSavedServices] = useState(false)
 
   const ALL_SERVICES = [
-    { key: 'account_recovery', label: 'Account Recovery', emoji: '🔓', desc: 'Recovering suspended/banned Aether accounts' },
-    { key: 'assessment',       label: 'Assessment',       emoji: '📝', desc: 'Conducting quality assessments on Aether' },
-    { key: 'tasker',           label: 'Tasker',           emoji: '✅', desc: 'AI task completion on Outlier' },
-    { key: 'onboarding',       label: 'Onboarding',       emoji: '🚀', desc: 'New contractor onboarding on Aether' },
+    { key: 'account_recovery', label: 'Account Recovery', emoji: '🔓', desc: 'Recovering suspended/banned contractor accounts' },
+    { key: 'assessment',       label: 'Assessment',       emoji: '📝', desc: 'Conducting quality assessments' },
+    { key: 'tasker',           label: 'Tasker',           emoji: '✅', desc: 'AI task completion and data annotation' },
+    { key: 'onboarding',       label: 'Onboarding',       emoji: '🚀', desc: 'New contractor onboarding' },
   ]
 
+  const loadSchedule = () => {
+    setLoadError(null)
+    api.get('/shifts/schedule')
+      .then(r => { setSchedule(r.data); setForm(r.data) })
+      .catch(err => setLoadError(getErrorMessage(err)))
+  }
+
   useEffect(() => {
-    api.get('/shifts/schedule').then(r => { setSchedule(r.data); setForm(r.data) })
+    loadSchedule()
     applicationsApi.getMyServices().then(r => setMyServices(r.data.services || [])).catch(() => {})
   }, [])
 
@@ -1358,6 +1366,18 @@ function SettingsPanel() {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally { setSaving(false) }
+  }
+
+  if (loadError) {
+    return (
+      <div className="page-pad" style={{ maxWidth: 520 }}>
+        <Alert
+          type="error"
+          message={`Couldn't load settings: ${loadError}`}
+        />
+        <Button variant="secondary" onClick={loadSchedule} style={{ marginTop: 14 }}>Retry</Button>
+      </div>
+    )
   }
 
   if (!schedule) return <div style={{ padding: 32 }}><Skeleton height={200} /></div>
@@ -1790,7 +1810,7 @@ function AttendancePanel({ workers }) {
               {s.total_minutes && <span>Duration: <strong style={{ color: 'var(--primary)' }}>{Math.floor(s.total_minutes/60)}h {s.total_minutes%60}m</strong></span>}
               {s.minutes_late && <span style={{ color: 'var(--amber)' }}>⚠ {s.minutes_late}min late</span>}
               <span>Check-ins: <strong style={{ color: 'var(--text)' }}>{s.check_ins?.length || 0}</strong></span>
-              <span>Outlier Tasks: <strong style={{ color: 'var(--emerald)' }}>{totalTasks(s)}</strong></span>
+              <span>Tasks Completed: <strong style={{ color: 'var(--emerald)' }}>{totalTasks(s)}</strong></span>
             </div>
 
             {s.is_blocked && s.block_reason && (

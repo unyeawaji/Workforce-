@@ -70,10 +70,10 @@ class UserOut(BaseModel):
 # ── Admin info (public — for apply page dropdown) ─────────────────────────────
 # All available service types offered across teams
 SERVICES_CATALOG = {
-    "account_recovery":    {"label": "Account Recovery",      "desc": "Recovering suspended or banned Aether/Outlier accounts",        "platform": "Aether · Outlier", "emoji": "🔓"},
-    "assessment":          {"label": "Assessment",             "desc": "Conducting onboarding & quality assessments on Aether",         "platform": "Aether · Outlier", "emoji": "📝"},
-    "tasker":              {"label": "Tasker",                 "desc": "Completing AI training tasks and data annotation on Outlier",    "platform": "Outlier",          "emoji": "✅"},
-    "onboarding":          {"label": "Onboarding",             "desc": "Guiding new contractors through platform onboarding on Aether",  "platform": "Aether",           "emoji": "🚀"},
+    "account_recovery":    {"label": "Account Recovery",      "desc": "Recovering suspended or banned contractor accounts",            "platform": "AI training platforms", "emoji": "🔓"},
+    "assessment":          {"label": "Assessment",             "desc": "Conducting onboarding & quality assessments",                   "platform": "AI training platforms", "emoji": "📝"},
+    "tasker":              {"label": "Tasker",                 "desc": "Completing AI training tasks and data annotation",              "platform": "AI training platforms", "emoji": "✅"},
+    "onboarding":          {"label": "Onboarding",             "desc": "Guiding new contractors through platform onboarding",           "platform": "AI training platforms", "emoji": "🚀"},
 }
 
 class AdminPublic(BaseModel):

@@ -660,7 +660,7 @@ export default function WorkerDashboard() {
 
   const handleSubmitCheckIn = async () => {
     setCheckInError('')
-    if (!checkInForm.tasks || isNaN(parseInt(checkInForm.tasks))) { setCheckInError('Enter number of Outlier tasks completed'); return }
+    if (!checkInForm.tasks || isNaN(parseInt(checkInForm.tasks))) { setCheckInError('Enter number of tasks completed'); return }
     if (!checkInFile) { setCheckInError('Screenshot is required'); return }
     setCheckInLoading(true)
     try {
@@ -893,7 +893,7 @@ export default function WorkerDashboard() {
                   🔔 Enable Check-in Reminders
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text3)', lineHeight: 1.5 }}>
-                  Get notified when it's time to submit your Outlier check-in — even when this tab is in the background.
+                  Get notified when it's time to submit your check-in — even when this tab is in the background.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -998,7 +998,7 @@ export default function WorkerDashboard() {
                   </div>
                   <input
                     type="text"
-                    placeholder="e.g. Outlier AI, Client ABC…"
+                    placeholder="e.g. Client ABC…"
                     value={clientName}
                     onChange={e => setClientName(e.target.value)}
                     style={{
@@ -1183,7 +1183,7 @@ export default function WorkerDashboard() {
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 20, lineHeight: 1.5 }}>
               {checkInStatus?.overdue
                 ? 'Your check-in is overdue. Your shift is now blocked until you submit. You cannot clock out without submitting.'
-                : `Time for your periodic check-in. Submit a screenshot of your Outlier dashboard and your task count.`
+                : `Time for your periodic check-in. Submit a screenshot of your work dashboard and your task count.`
               }
             </div>
 
@@ -1191,7 +1191,7 @@ export default function WorkerDashboard() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Outlier Tasks Completed *</label>
+                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Tasks Completed *</label>
                 <input
                   type="number" min={0} placeholder="e.g. 12"
                   value={checkInForm.tasks}
@@ -1201,7 +1201,7 @@ export default function WorkerDashboard() {
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Screenshot of Outlier Dashboard *</label>
+                <label style={{ fontSize: 12, fontWeight: 500, display: 'block', marginBottom: 6 }}>Screenshot of Work Dashboard *</label>
                 <label style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
                   borderRadius: 'var(--r)', border: '1px dashed var(--border)',
@@ -1259,7 +1259,7 @@ export default function WorkerDashboard() {
               },
               {
                 step: '2', icon: '📸', title: 'Submit Periodic Check-ins',
-                body: 'While you are clocked in, the system requires you to submit a check-in at regular intervals (e.g. every 2 hours). Each check-in proves you are actively working on the Outlier platform. You must: (1) take a screenshot of your Outlier dashboard showing your account, (2) enter the number of tasks you completed since the last check-in, and (3) optionally add a note. You will receive a push notification when a check-in is due — tap it to open the app and submit. If you miss a check-in window, your shift will be automatically blocked and you will not be able to upload your final screenshot or clock out until you submit the overdue check-in.',
+                body: 'While you are clocked in, the system requires you to submit a check-in at regular intervals (e.g. every 2 hours). Each check-in proves you are actively working. You must: (1) take a screenshot of your work dashboard showing your account, (2) enter the number of tasks you completed since the last check-in, and (3) optionally add a note. You will receive a push notification when a check-in is due — tap it to open the app and submit. If you miss a check-in window, your shift will be automatically blocked and you will not be able to upload your final screenshot or clock out until you submit the overdue check-in.',
               },
               {
                 step: '3', icon: '📋', title: 'Log Your Activities',
@@ -1267,7 +1267,7 @@ export default function WorkerDashboard() {
               },
               {
                 step: '4', icon: '🖼️', title: 'Upload a Final Screenshot',
-                body: 'Before clocking out, you must upload a final screenshot of your Outlier dashboard. This serves as your end-of-shift proof of work and is separate from your periodic check-in screenshots. The upload card is visible throughout your entire shift — you do not need to wait until the last minute. You cannot clock out without uploading this screenshot.',
+                body: 'Before clocking out, you must upload a final screenshot of your work dashboard. This serves as your end-of-shift proof of work and is separate from your periodic check-in screenshots. The upload card is visible throughout your entire shift — you do not need to wait until the last minute. You cannot clock out without uploading this screenshot.',
               },
               {
                 step: '5', icon: '🔴', title: 'Clock Out',
@@ -1309,7 +1309,7 @@ export default function WorkerDashboard() {
               },
               {
                 q: 'What should my check-in screenshot show?',
-                a: 'It must clearly show your Outlier dashboard with your account details visible. The screenshot proves you were actively on the platform at that point in time. Blurry, cropped, or irrelevant screenshots may be flagged or rejected by your admin.',
+                a: 'It must clearly show your work dashboard with your account details visible. The screenshot proves you were actively on the platform at that point in time. Blurry, cropped, or irrelevant screenshots may be flagged or rejected by your admin.',
               },
               {
                 q: 'Can I upload my final screenshot early?',
@@ -1329,7 +1329,7 @@ export default function WorkerDashboard() {
               },
               {
                 q: 'What counts as a task in the check-in form?',
-                a: 'A task is any unit of work you completed on the Outlier platform since your last check-in. Enter an honest count — your admin can cross-reference this against your Outlier dashboard screenshot.',
+                a: 'A task is any unit of work you completed since your last check-in. Enter an honest count — your admin can cross-reference this against your work dashboard screenshot.',
               },
               {
                 q: 'What happens to my check-in data?',

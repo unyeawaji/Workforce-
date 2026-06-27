@@ -244,21 +244,39 @@ def run_migrations():
         "ALTER TABLE holidays ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
 
         # The original singleton row was created with an explicit `id=1`
-        # (WorkSchedule(id=1)) rather than letting Postgres generate it via
-        # the sequence — so work_schedule_id_seq was very likely never
-        # advanced past its starting value. Re-sync it from the actual max
-        # id in the table before we insert any new per-admin rows below;
-        # otherwise the next INSERT could try to reuse id=1 and collide,
-        # or worse, hand out duplicate ids across the backfill inserts.
-        # setval(..., true) means "next nextval() returns max+1" — false
-        # would mean "next nextval() returns max itself", which we don't want.
-        """
-        SELECT setval(
-            pg_get_serial_sequence('work_schedule', 'id'),
-            COALESCE((SELECT MAX(id) FROM work_schedule), 1),
-            true
-        )
-        """,
+        # (WorkSchedule(id=1)) rather than letting Postgres generate it. That
+        # alone is recoverable IF the column still has a working nextval()
+        # sequence attached — but a live failure (NotNullViolation: null
+        # value in column "id") showed that on at least one deployment of
+        # this database, the column has NO sequence-backed default at all:
+        # pg_get_serial_sequence('work_schedule', 'id') was returning NULL,
+        # so a plain setval() against it had nothing to act on and silently
+        # no-opped. Rather than continuing to guess why create_all() didn't
+        # attach a sequence here, this makes the column correct unconditionally:
+        # create the sequence if it's missing, attach it as the column's
+        # default explicitly, mark it as owned by the column (so it's cleaned
+        # up automatically if the column is ever dropped), then sync its
+        # current value from the table's actual max id. Every step is
+        # idempotent — safe to run on every startup regardless of the
+        # column's current state.
+        "CREATE SEQUENCE IF NOT EXISTS work_schedule_id_seq",
+        "ALTER SEQUENCE work_schedule_id_seq OWNED BY work_schedule.id",
+        "ALTER TABLE work_schedule ALTER COLUMN id SET DEFAULT nextval('work_schedule_id_seq')",
+        "SELECT setval('work_schedule_id_seq', COALESCE((SELECT MAX(id) FROM work_schedule), 1), true)",
+
+        # day_schedules and holidays were never constructed with an explicit
+        # id anywhere in the codebase, so there was never a reason to expect
+        # the same problem here — but that was also true of work_schedule
+        # before it broke in production, so the same unconditional fix is
+        # applied here too rather than relying on that assumption again.
+        "CREATE SEQUENCE IF NOT EXISTS day_schedules_id_seq",
+        "ALTER SEQUENCE day_schedules_id_seq OWNED BY day_schedules.id",
+        "ALTER TABLE day_schedules ALTER COLUMN id SET DEFAULT nextval('day_schedules_id_seq')",
+        "SELECT setval('day_schedules_id_seq', COALESCE((SELECT MAX(id) FROM day_schedules), 1), true)",
+        "CREATE SEQUENCE IF NOT EXISTS holidays_id_seq",
+        "ALTER SEQUENCE holidays_id_seq OWNED BY holidays.id",
+        "ALTER TABLE holidays ALTER COLUMN id SET DEFAULT nextval('holidays_id_seq')",
+        "SELECT setval('holidays_id_seq', COALESCE((SELECT MAX(id) FROM holidays), 1), true)",
 
         # Drop the old global-uniqueness constraints so multiple admins can
         # each have a day_of_week=0 row / a holiday on the same date.
@@ -392,6 +410,19 @@ def run_migrations():
         # for a department name they both happened to use (e.g. "Engineering").
         "ALTER TABLE department_rates ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
         "ALTER TABLE department_rates DROP CONSTRAINT IF EXISTS department_rates_department_key",
+
+        # Defensive: work_schedule.id turned out to be missing a working
+        # nextval() sequence in production despite no code ever passing it an
+        # explicit id, for reasons that weren't fully diagnosable without
+        # direct database access. department_rates.id looks structurally
+        # identical (same kind of integer primary key, same create_all()
+        # origin) — applying the same unconditional fix here too rather than
+        # assuming it's fine, since "it looks the same" was exactly the wrong
+        # assumption for work_schedule.
+        "CREATE SEQUENCE IF NOT EXISTS department_rates_id_seq",
+        "ALTER SEQUENCE department_rates_id_seq OWNED BY department_rates.id",
+        "ALTER TABLE department_rates ALTER COLUMN id SET DEFAULT nextval('department_rates_id_seq')",
+        "SELECT setval('department_rates_id_seq', COALESCE((SELECT MAX(id) FROM department_rates), 1), true)",
 
         # Backfill: clone every existing rate to every existing regular admin.
         # Unlike work_schedule (a true one-row singleton), department_rates can
