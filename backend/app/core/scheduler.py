@@ -14,10 +14,10 @@ Throttle durability note:
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 logger = logging.getLogger(__name__)
-_scheduler: Optional[AsyncIOScheduler] = None  # Optional syntax for Python 3.9 compat
+_scheduler: Optional[BackgroundScheduler] = None  # Optional syntax for Python 3.9 compat
 
 
 def _window_key(shift_id: int, next_due: datetime, kind: str) -> str:
@@ -60,6 +60,23 @@ def _cleanup_old_logs(db) -> None:
     db.commit()
 
 
+def _cleanup_old_export_tokens(db) -> None:
+    """
+    Prune used export-token records once they're well past expiry.
+
+    Tokens have a 60s TTL (see create_export_token), so anything older than a
+    few minutes can never be replayed again — this just keeps the table from
+    growing forever. Runs here (every 2 min) instead of inline in the /export
+    request path, so a read-only export call never pays for a DELETE.
+    """
+    from app.models.models import UsedExportToken
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    db.query(UsedExportToken).filter(
+        UsedExportToken.used_at < cutoff
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
 def _run_reminder():
     """Synchronous job body — imported lazily to avoid circular imports at startup."""
     from app.db.database import SessionLocal
@@ -75,12 +92,11 @@ def _run_reminder():
 
         # Prune old log rows once per run
         _cleanup_old_logs(db)
+        _cleanup_old_export_tokens(db)
 
-        # Get the check-in interval setting
-        schedule = get_or_create_work_schedule(db)
-        interval_minutes = schedule.checkin_interval_minutes if schedule else 120
-
-        # All open shifts today (clocked in, not clocked out)
+        # All open shifts today (clocked in, not clocked out), across every
+        # admin's team — this job is global, so it has to fan out per-admin
+        # rather than reading one platform-wide schedule.
         open_shifts = (
             db.query(Shift)
             .options(joinedload(Shift.check_ins), joinedload(Shift.worker))
@@ -92,7 +108,22 @@ def _run_reminder():
             .all()
         )
 
+        # Cache each admin's check-in interval so we don't re-fetch/create
+        # the WorkSchedule row once per shift when several workers share an admin.
+        interval_by_admin: dict[int, int] = {}
+
         for shift in open_shifts:
+            admin_id = shift.worker.admin_id if shift.worker else None
+            if admin_id is None:
+                # Orphaned shift with no resolvable admin team — nothing to
+                # check against, skip rather than guessing a schedule.
+                continue
+
+            if admin_id not in interval_by_admin:
+                schedule = get_or_create_work_schedule(db, admin_id)
+                interval_by_admin[admin_id] = schedule.checkin_interval_minutes if schedule else 120
+            interval_minutes = interval_by_admin[admin_id]
+
             # Sort check_ins by submitted_at so [-1] is genuinely the latest
             sorted_checkins = sorted(shift.check_ins, key=lambda c: c.submitted_at)
             last_event = (
@@ -143,7 +174,7 @@ def start_scheduler():
     global _scheduler
     if _scheduler is not None:
         return
-    _scheduler = AsyncIOScheduler(timezone="UTC")
+    _scheduler = BackgroundScheduler(timezone="UTC")
     # Run every 2 minutes — fine granularity without hammering the DB
     _scheduler.add_job(_run_reminder, "interval", minutes=2, id="checkin_reminder",
                        max_instances=1, coalesce=True)

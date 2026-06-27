@@ -14,6 +14,7 @@ from app.core.schedule_utils import (
     DAY_NAMES,
     get_work_window_status,
     seed_default_schedule,
+    resolve_team_admin_id,
 )
 
 router = APIRouter(prefix="/schedule", tags=["Schedule"])
@@ -25,14 +26,16 @@ logger = logging.getLogger(__name__)
 @router.get("/window", response_model=WorkWindowStatus)
 def get_work_window(db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Workers poll this to know if they can clock in and get countdown info."""
-    return get_work_window_status(db, datetime.now(timezone.utc))
+    return get_work_window_status(db, resolve_team_admin_id(user), datetime.now(timezone.utc))
 
 
 @router.get("/days", response_model=List[DayScheduleOut])
 def get_day_schedules(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
-    seed_default_schedule(db)
+    seed_default_schedule(db, admin.id)
     return [DayScheduleOut.model_validate(s)
-            for s in db.query(DaySchedule).order_by(DaySchedule.day_of_week).all()]
+            for s in db.query(DaySchedule)
+            .filter(DaySchedule.admin_id == admin.id)
+            .order_by(DaySchedule.day_of_week).all()]
 
 
 @router.put("/days/{day_of_week}", response_model=DayScheduleOut)
@@ -45,8 +48,10 @@ def update_day_schedule(
     if not 0 <= day_of_week <= 6:
         raise HTTPException(400, "day_of_week must be 0 (Mon) to 6 (Sun)")
     # Cross-midnight schedules (e.g. 16:00–03:00) are valid — no end>start check
-    seed_default_schedule(db)
-    sched = db.query(DaySchedule).filter(DaySchedule.day_of_week == day_of_week).first()
+    seed_default_schedule(db, admin.id)
+    sched = db.query(DaySchedule).filter(
+        DaySchedule.admin_id == admin.id, DaySchedule.day_of_week == day_of_week
+    ).first()
     if not sched:
         # Shouldn't happen via the API alone (seeding is all-or-nothing), but guards
         # against a partially-seeded table from direct DB access.
@@ -62,7 +67,9 @@ def update_day_schedule(
 @router.get("/holidays", response_model=List[HolidayOut])
 def list_holidays(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     return [HolidayOut.model_validate(h)
-            for h in db.query(Holiday).order_by(Holiday.date).all()]
+            for h in db.query(Holiday)
+            .filter(Holiday.admin_id == admin.id)
+            .order_by(Holiday.date).all()]
 
 
 @router.post("/holidays", response_model=HolidayOut)
@@ -71,13 +78,15 @@ def add_holiday(
     db: Session = Depends(get_db),
     admin=Depends(require_regular_admin),
 ):
-    if db.query(Holiday).filter(Holiday.date == payload.date).first():
+    if db.query(Holiday).filter(
+        Holiday.admin_id == admin.id, Holiday.date == payload.date
+    ).first():
         raise HTTPException(400, "A holiday already exists for this date")
-    h = Holiday(date=payload.date, name=payload.name)
+    h = Holiday(admin_id=admin.id, date=payload.date, name=payload.name)
     db.add(h)
     db.commit()
     db.refresh(h)
-    logger.info("Admin added holiday: %s on %s", payload.name, payload.date)
+    logger.info("Admin %s added holiday: %s on %s", admin.id, payload.name, payload.date)
     return HolidayOut.model_validate(h)
 
 
@@ -87,7 +96,9 @@ def delete_holiday(
     db: Session = Depends(get_db),
     admin=Depends(require_regular_admin),
 ):
-    h = db.query(Holiday).filter(Holiday.id == holiday_id).first()
+    h = db.query(Holiday).filter(
+        Holiday.id == holiday_id, Holiday.admin_id == admin.id
+    ).first()
     if not h:
         raise HTTPException(404, "Holiday not found")
     db.delete(h)

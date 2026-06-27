@@ -14,9 +14,9 @@ router = APIRouter(prefix="/payroll", tags=["Payroll"])
 logger = logging.getLogger(__name__)
 
 
-def _get_currency(db: Session) -> str:
-    """Single source of truth for pay currency — set by the admin once, used everywhere."""
-    return get_or_create_work_schedule(db).currency
+def _get_currency(db: Session, admin_id: int) -> str:
+    """Single source of truth for this admin team's pay currency."""
+    return get_or_create_work_schedule(db, admin_id).currency
 
 
 def _worker_payroll(
@@ -63,24 +63,24 @@ def _worker_payroll(
 
 @router.get("/rates", response_model=List[DepartmentRateOut])
 def list_rates(db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
-    currency = _get_currency(db)
+    currency = _get_currency(db, admin.id)
     rates = db.query(DepartmentRate).all()
-    # Keep the stored row's currency in sync with the global setting, in case it
-    # was changed since this rate was last touched — avoids a stale value lingering.
+    # Override the currency at serialisation time only — a GET must never write
+    # to the DB. The stored row's currency is brought into sync at write time
+    # instead, in upsert_rate().
     out = []
     for r in rates:
-        if r.currency != currency:
-            r.currency = currency
-    if rates:
-        db.commit()
-    return [DepartmentRateOut.model_validate(r) for r in rates]
+        dto = DepartmentRateOut.model_validate(r)
+        dto.currency = currency
+        out.append(dto)
+    return out
 
 
 @router.post("/rates", response_model=DepartmentRateOut)
 def upsert_rate(payload: DepartmentRateUpsert, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
     if payload.hourly_rate_cents < 0:
         raise HTTPException(400, "Hourly rate cannot be negative")
-    currency = _get_currency(db)  # currency is no longer set per-rate — always the admin-wide value
+    currency = _get_currency(db, admin.id)  # currency is no longer set per-rate — always this team's value
     rate = db.query(DepartmentRate).filter(DepartmentRate.department == payload.department).first()
     if rate:
         rate.hourly_rate_cents = payload.hourly_rate_cents
@@ -137,7 +137,7 @@ def payroll_summary(
     workers = active_q.all() + inactive_with_hours_q.all()
 
     rates = {r.department: r for r in db.query(DepartmentRate).all()}
-    currency = _get_currency(db)
+    currency = _get_currency(db, admin.id)
     results = [_worker_payroll(db, w, rates, currency, date_from, date_to) for w in workers]
     return sorted(results, key=lambda x: x.gross_pay_cents, reverse=True)
 
@@ -157,5 +157,5 @@ def my_payroll_summary(
     if user.role != UserRole.worker:
         raise HTTPException(403, "Only workers can view their own payroll summary")
     rates = {r.department: r for r in db.query(DepartmentRate).all()}
-    currency = _get_currency(db)
+    currency = _get_currency(db, user.admin_id)
     return _worker_payroll(db, user, rates, currency, date_from, date_to)

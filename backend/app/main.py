@@ -120,6 +120,93 @@ def run_migrations():
         "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS position_type VARCHAR(60) NOT NULL DEFAULT 'tasker'",
         # Services an admin's team offers — stored as comma-separated string, e.g. "account_recovery,assessment"
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS services TEXT",
+
+        # ── Per-admin work schedules (was previously one global singleton) ──
+        # Add admin_id columns. Existing rows (created before this migration)
+        # will have admin_id = NULL until backfilled below.
+        "ALTER TABLE work_schedule ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+        "ALTER TABLE day_schedules ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+        "ALTER TABLE holidays ADD COLUMN IF NOT EXISTS admin_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
+
+        # The original singleton row was created with an explicit `id=1`
+        # (WorkSchedule(id=1)) rather than letting Postgres generate it via
+        # the sequence — so work_schedule_id_seq was very likely never
+        # advanced past its starting value. Re-sync it from the actual max
+        # id in the table before we insert any new per-admin rows below;
+        # otherwise the next INSERT could try to reuse id=1 and collide,
+        # or worse, hand out duplicate ids across the backfill inserts.
+        # setval(..., true) means "next nextval() returns max+1" — false
+        # would mean "next nextval() returns max itself", which we don't want.
+        """
+        SELECT setval(
+            pg_get_serial_sequence('work_schedule', 'id'),
+            COALESCE((SELECT MAX(id) FROM work_schedule), 1),
+            true
+        )
+        """,
+
+        # Drop the old global-uniqueness constraints so multiple admins can
+        # each have a day_of_week=0 row / a holiday on the same date.
+        "ALTER TABLE day_schedules DROP CONSTRAINT IF EXISTS day_schedules_day_of_week_key",
+        "ALTER TABLE holidays DROP CONSTRAINT IF EXISTS holidays_date_key",
+
+        # Backfill: clone the old global settings (id=1 / admin_id IS NULL rows)
+        # into a fresh row for every existing admin who doesn't have one yet.
+        # This runs once — once an admin has a row, ON CONFLICT-style guards
+        # (the admin_id IS NULL filters below) make it a no-op on later restarts.
+        """
+        INSERT INTO work_schedule
+            (admin_id, clock_in_deadline_hour, clock_in_deadline_minute,
+             checkin_interval_minutes, grace_period_minutes, currency)
+        SELECT u.id, g.clock_in_deadline_hour, g.clock_in_deadline_minute,
+               g.checkin_interval_minutes, g.grace_period_minutes, g.currency
+        FROM users u
+        CROSS JOIN (
+            SELECT * FROM work_schedule WHERE admin_id IS NULL ORDER BY id LIMIT 1
+        ) g
+        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+          AND NOT EXISTS (SELECT 1 FROM work_schedule ws WHERE ws.admin_id = u.id)
+        """,
+        """
+        INSERT INTO day_schedules
+            (admin_id, day_of_week, is_working_day,
+             work_start_hour, work_start_minute, work_end_hour, work_end_minute)
+        SELECT u.id, g.day_of_week, g.is_working_day,
+               g.work_start_hour, g.work_start_minute, g.work_end_hour, g.work_end_minute
+        FROM users u
+        CROSS JOIN (
+            SELECT * FROM day_schedules WHERE admin_id IS NULL
+        ) g
+        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM day_schedules ds
+              WHERE ds.admin_id = u.id AND ds.day_of_week = g.day_of_week
+          )
+        """,
+        # Holidays: clone any pre-existing global holidays to every admin too,
+        # so nobody loses dates they'd already configured.
+        """
+        INSERT INTO holidays (admin_id, date, name)
+        SELECT u.id, g.date, g.name
+        FROM users u
+        CROSS JOIN (
+            SELECT * FROM holidays WHERE admin_id IS NULL
+        ) g
+        WHERE u.role = 'admin' AND u.is_system_admin = FALSE
+          AND NOT EXISTS (
+              SELECT 1 FROM holidays h WHERE h.admin_id = u.id AND h.date = g.date
+          )
+        """,
+        # The old global rows (admin_id IS NULL) are now superseded by the
+        # per-admin clones above — remove them so they don't show up as an
+        # orphaned "no admin" schedule that nothing queries against anymore.
+        "DELETE FROM work_schedule WHERE admin_id IS NULL",
+        "DELETE FROM day_schedules WHERE admin_id IS NULL",
+        "DELETE FROM holidays WHERE admin_id IS NULL",
+        # Re-add uniqueness, now scoped per admin instead of globally.
+        "ALTER TABLE work_schedule ADD CONSTRAINT uq_work_schedule_admin UNIQUE (admin_id)",
+        "ALTER TABLE day_schedules ADD CONSTRAINT uq_admin_day UNIQUE (admin_id, day_of_week)",
+        "ALTER TABLE holidays ADD CONSTRAINT uq_admin_holiday_date UNIQUE (admin_id, date)",
     ]
     with engine.connect() as conn:
         for stmt in migrations:
@@ -158,6 +245,15 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.get_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 @app.middleware("http")
 async def handle_options_preflight(request: Request, call_next):
     """
@@ -166,6 +262,9 @@ async def handle_options_preflight(request: Request, call_next):
     a browser dev tool). This middleware intercepts all OPTIONS and returns
     200 immediately so CORS preflights always succeed. Security is enforced
     by JWT on actual API calls — a 200 preflight doesn't grant any data access.
+
+    NOTE: must be registered AFTER add_middleware(CORSMiddleware) so that
+    Starlette places it as the outermost layer (last-registered = outermost).
     """
     if request.method == "OPTIONS":
         return Response(
@@ -179,14 +278,6 @@ async def handle_options_preflight(request: Request, call_next):
             },
         )
     return await call_next(request)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.get_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=PREFIX)

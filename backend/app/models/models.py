@@ -114,24 +114,29 @@ class JobApplication(Base):
 
 
 class WorkSchedule(Base):
-    """Admin-configured work schedule — one row, updated in place."""
+    """Admin-configured work schedule — one row per admin team."""
     __tablename__ = "work_schedule"
 
-    id = Column(Integer, primary_key=True, default=1)
+    id = Column(Integer, primary_key=True, index=True)
+    # One schedule per admin team. NULL only for legacy/system rows pre-migration;
+    # every admin gets their own row going forward (see get_or_create_work_schedule).
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     clock_in_deadline_hour = Column(Integer, default=15)
     clock_in_deadline_minute = Column(Integer, default=0)
     checkin_interval_minutes = Column(Integer, default=120)
     grace_period_minutes = Column(Integer, default=15)
-    currency = Column(String(10), default="USD", nullable=False)  # single source of truth for all pay
+    currency = Column(String(10), default="USD", nullable=False)  # single source of truth for this team's pay
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
 class DaySchedule(Base):
     """Per-day-of-week work window set by admin. day_of_week: 0=Mon, 6=Sun."""
     __tablename__ = "day_schedules"
+    __table_args__ = (UniqueConstraint("admin_id", "day_of_week", name="uq_admin_day"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    day_of_week = Column(Integer, unique=True, nullable=False)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    day_of_week = Column(Integer, nullable=False)
     is_working_day = Column(Boolean, default=True, nullable=False)
     work_start_hour = Column(Integer, default=15)
     work_start_minute = Column(Integer, default=0)
@@ -141,11 +146,13 @@ class DaySchedule(Base):
 
 
 class Holiday(Base):
-    """Specific dates blocked as holidays/off days."""
+    """Specific dates blocked as holidays/off days, per admin team."""
     __tablename__ = "holidays"
+    __table_args__ = (UniqueConstraint("admin_id", "date", name="uq_admin_holiday_date"),)
 
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date, unique=True, nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    date = Column(Date, nullable=False, index=True)
     name = Column(String(100), nullable=False)
     created_at = Column(DateTime(timezone=True), default=_now)
 

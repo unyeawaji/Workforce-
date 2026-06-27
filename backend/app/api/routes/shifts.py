@@ -8,7 +8,7 @@ from app.models.models import Shift, CheckIn, User, UserRole, WorkSchedule
 from app.schemas.schemas import ShiftOut, ShiftOutFull, CheckInOut, WorkScheduleOut, WorkScheduleUpdate, ShiftNoteUpdate
 from app.api.deps import get_current_user, require_regular_admin
 from app.core.cloudinary_config import upload_screenshot as cloudinary_upload
-from app.core.schedule_utils import get_work_window_status, logical_today, get_or_create_work_schedule
+from app.core.schedule_utils import get_work_window_status, logical_today, get_or_create_work_schedule, resolve_team_admin_id
 
 router = APIRouter(prefix="/shifts", tags=["Shifts"])
 logger = logging.getLogger(__name__)
@@ -22,8 +22,8 @@ def _today() -> date:
     return logical_today(datetime.now(timezone.utc))
 
 
-def _get_schedule(db: Session) -> WorkSchedule:
-    return get_or_create_work_schedule(db)
+def _get_schedule(db: Session, admin_id: int) -> WorkSchedule:
+    return get_or_create_work_schedule(db, admin_id)
 
 
 def _check_punctuality(shift: Shift, schedule: WorkSchedule, now: datetime):
@@ -72,17 +72,17 @@ def _has_missed_checkin(shift: Shift, schedule: WorkSchedule, now: datetime) -> 
 
 @router.get("/schedule", response_model=WorkScheduleOut)
 def get_schedule(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return WorkScheduleOut.model_validate(_get_schedule(db))
+    return WorkScheduleOut.model_validate(_get_schedule(db, resolve_team_admin_id(user)))
 
 
 @router.patch("/schedule", response_model=WorkScheduleOut)
 def update_schedule(payload: WorkScheduleUpdate, db: Session = Depends(get_db), admin=Depends(require_regular_admin)):
-    s = _get_schedule(db)
+    s = _get_schedule(db, admin.id)
     for k, v in payload.model_dump(exclude_none=True).items():
         setattr(s, k, v)
     db.commit()
     db.refresh(s)
-    logger.info("Admin updated work schedule")
+    logger.info("Admin %s updated their team's work schedule", admin.id)
     return WorkScheduleOut.model_validate(s)
 
 
@@ -98,8 +98,12 @@ def clock_in(client_name: Optional[str] = None, db: Session = Depends(get_db), u
     if not shift:
         shift = Shift(worker_id=user.id, date=t)
         db.add(shift)
-    # Enforce work window
-    window = get_work_window_status(db, now)
+    # Enforce work window — this worker's own admin team's schedule. Resolved
+    # via resolve_team_admin_id (not raw user.admin_id) so an orphaned worker
+    # (admin account deleted) gets a clear error instead of silently falling
+    # through to a fresh admin_id=None WorkSchedule row.
+    team_admin_id = resolve_team_admin_id(user)
+    window = get_work_window_status(db, team_admin_id, now)
     if not window.can_clock_in:
         db.rollback()
         raise HTTPException(403, window.message)
@@ -113,7 +117,7 @@ def clock_in(client_name: Optional[str] = None, db: Session = Depends(get_db), u
         # Persist to user profile if this is new or changed
         if user.client_name != resolved_client:
             user.client_name = resolved_client
-    schedule = _get_schedule(db)
+    schedule = _get_schedule(db, team_admin_id)
     _check_punctuality(shift, schedule, now)
     db.commit()
     db.refresh(shift)
@@ -197,7 +201,7 @@ def checkin_status(db: Session = Depends(get_db), user=Depends(get_current_user)
     if not shift or not shift.clock_in or shift.clock_out:
         return {"due": False, "next_due_at": None, "overdue": False, "check_in_count": 0}
 
-    schedule = _get_schedule(db)
+    schedule = _get_schedule(db, resolve_team_admin_id(user))
     now = datetime.now(timezone.utc)
     next_due = _next_checkin_due(shift, schedule)
     overdue = _has_missed_checkin(shift, schedule, now)
@@ -272,15 +276,26 @@ def clock_out(db: Session = Depends(get_db), user=Depends(get_current_user)):
     if not shift.screenshot_url:
         raise HTTPException(400, "Please upload a final screenshot before clocking out")
 
-    schedule = _get_schedule(db)
+    schedule = _get_schedule(db, resolve_team_admin_id(user))
     now = datetime.now(timezone.utc)
 
-    # Check for overdue check-in at clock-out time
-    if _has_missed_checkin(shift, schedule, now) and not shift.is_blocked:
-        shift.is_blocked = True
-        shift.block_reason = "Missed a periodic check-in. Submit it before clocking out."
-        db.commit()
-        raise HTTPException(403, shift.block_reason)
+    MISSED_CHECKIN_MSG = "Missed a periodic check-in. Submit it before clocking out."
+
+    # A shift can be blocked for reasons other than a missed check-in (e.g. a
+    # late clock-in past the grace period) — only collapse the messaging for
+    # the missed-check-in case specifically, whether it was just detected here
+    # or was already flagged earlier by the /check-ins/status poller. That way
+    # the worker gets the same remediation instruction regardless of which
+    # code path caught it, without masking unrelated block reasons.
+    already_blocked_for_checkin = (
+        shift.is_blocked and shift.block_reason and "check-in" in shift.block_reason.lower()
+    )
+    if already_blocked_for_checkin or _has_missed_checkin(shift, schedule, now):
+        if not shift.is_blocked:
+            shift.is_blocked = True
+            shift.block_reason = MISSED_CHECKIN_MSG
+            db.commit()
+        raise HTTPException(403, MISSED_CHECKIN_MSG)
 
     if shift.is_blocked:
         raise HTTPException(403, f"Shift is blocked: {shift.block_reason}. Contact admin.")
@@ -338,8 +353,24 @@ def list_shifts(
     q = db.query(Shift)
     if user.role == UserRole.worker:
         q = q.filter(Shift.worker_id == user.id)
-    elif worker_id:
-        q = q.filter(Shift.worker_id == worker_id)
+    elif user.role == UserRole.admin:
+        # Only this admin's own team — and if a specific worker_id was
+        # requested, it must actually belong to that team, otherwise an
+        # admin could read any other team's shifts just by guessing an id.
+        team_ids = [u.id for u in db.query(User).filter(
+            User.admin_id == user.id, User.role == UserRole.worker
+        ).all()]
+        if worker_id:
+            if worker_id not in team_ids:
+                raise HTTPException(403, "Worker does not belong to your team")
+            q = q.filter(Shift.worker_id == worker_id)
+        else:
+            q = q.filter(Shift.worker_id.in_(team_ids))
+    else:
+        # Clients have their own dedicated views (clients.py). There's no
+        # client-safe filter for the general shift list, so deny outright
+        # rather than leaving this to fall through with no filter at all.
+        raise HTTPException(403, "Access denied")
     if date_from:
         q = q.filter(Shift.date >= date_from)
     if date_to:

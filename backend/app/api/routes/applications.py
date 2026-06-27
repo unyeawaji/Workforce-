@@ -67,8 +67,17 @@ def list_admins_public(db: Session = Depends(get_db)):
 @router.post("", response_model=JobApplicationOut, status_code=201)
 def submit_application(payload: JobApplicationCreate, db: Session = Depends(get_db)):
     """Public: create application + inactive worker account."""
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(409, "Email already registered")
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        # A rejected applicant's account is inactive and was never approved, so
+        # there's no shift/activity history attached to it — it's safe to clear
+        # the way for a fresh application. Anyone else (active worker, pending
+        # applicant, admin, client) keeps the email blocked.
+        prior_app = db.query(JobApplication).filter(JobApplication.user_id == existing.id).first()
+        if existing.is_active or not prior_app or prior_app.status != ApplicationStatus.rejected:
+            raise HTTPException(409, "Email already registered")
+        db.delete(existing)  # cascades the old rejected JobApplication row
+        db.flush()
     admin = db.query(User).filter(
         User.id == payload.admin_id,
         User.role == UserRole.admin,

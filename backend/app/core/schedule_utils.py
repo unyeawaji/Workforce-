@@ -47,30 +47,30 @@ def logical_today(now: datetime | None = None) -> date:
     return now.date()
 
 
-def get_or_create_work_schedule(db: Session) -> WorkSchedule:
+def get_or_create_work_schedule(db: Session, admin_id: int) -> WorkSchedule:
     """
-    Single source of truth for fetching the admin-wide WorkSchedule singleton
-    (id=1). Creates it with defaults if it doesn't exist yet, so every caller
-    gets a real row back rather than having to separately handle a None case.
+    Fetch this admin's WorkSchedule row. Creates it with defaults if it
+    doesn't exist yet, so every caller gets a real row back rather than
+    having to separately handle a None case.
 
-    Previously this exact query — and, in two of three call sites, weaker
-    handling of the "row doesn't exist yet" case — was duplicated across
-    shifts.py, payroll.py, and scheduler.py.
+    Each admin team has its own row — clock-in deadlines, check-in interval,
+    grace period, and currency are all configured per team, not platform-wide.
     """
-    s = db.query(WorkSchedule).filter(WorkSchedule.id == 1).first()
+    s = db.query(WorkSchedule).filter(WorkSchedule.admin_id == admin_id).first()
     if not s:
-        s = WorkSchedule(id=1)
+        s = WorkSchedule(admin_id=admin_id)
         db.add(s)
         db.commit()
         db.refresh(s)
     return s
 
 
-def seed_default_schedule(db: Session) -> None:
-    """Create a default Mon–Fri 16:00–03:00 (next day) schedule if none exists."""
-    if db.query(DaySchedule).count() == 0:
+def seed_default_schedule(db: Session, admin_id: int) -> None:
+    """Create a default Mon–Fri 16:00–03:00 (next day) schedule for this admin if none exists."""
+    if db.query(DaySchedule).filter(DaySchedule.admin_id == admin_id).count() == 0:
         for dow in range(7):
             db.add(DaySchedule(
+                admin_id=admin_id,
                 day_of_week=dow,
                 is_working_day=dow < 5,          # Mon–Fri working, Sat–Sun off
                 work_start_hour=15, work_start_minute=0,
@@ -123,29 +123,49 @@ def _window_datetimes(sched: DaySchedule, now: datetime):
     return start, end
 
 
-def get_next_window(db: Session, from_date: date):
-    """Return (day_name, 'HH:MM') for the next working day after *from_date*."""
+def resolve_team_admin_id(user) -> int:
+    """
+    Resolve which admin's schedule applies to *user*. Admins use their own
+    id; workers and clients use the admin_id of the team they belong to.
+
+    Takes a duck-typed user object (needs .role and .admin_id /.id) rather
+    than importing the User/UserRole models, to keep this module free of
+    model-layer dependencies beyond the schedule tables themselves.
+    """
+    from app.models.models import UserRole
+    from fastapi import HTTPException
+    if user.role == UserRole.admin:
+        return user.id
+    if user.admin_id is None:
+        raise HTTPException(400, "No admin team assigned — schedule unavailable")
+    return user.admin_id
+
+
+def get_next_window(db: Session, admin_id: int, from_date: date):
+    """Return (day_name, 'HH:MM') for the next working day after *from_date*, for this admin's team."""
     for i in range(1, 8):
         next_date = from_date + timedelta(days=i)
         dow = next_date.weekday()
-        if db.query(Holiday).filter(Holiday.date == next_date).first():
+        if db.query(Holiday).filter(Holiday.admin_id == admin_id, Holiday.date == next_date).first():
             continue
-        sched = db.query(DaySchedule).filter(DaySchedule.day_of_week == dow).first()
+        sched = db.query(DaySchedule).filter(
+            DaySchedule.admin_id == admin_id, DaySchedule.day_of_week == dow
+        ).first()
         if sched and sched.is_working_day:
             return DAY_NAMES[dow], f"{sched.work_start_hour:02d}:{sched.work_start_minute:02d}"
     return None, None
 
 
-def get_work_window_status(db: Session, now: datetime) -> WorkWindowStatus:
-    """Determine whether clock-in is currently permitted and return full window info."""
-    seed_default_schedule(db)
+def get_work_window_status(db: Session, admin_id: int, now: datetime) -> WorkWindowStatus:
+    """Determine whether clock-in is currently permitted for this admin's team, and return full window info."""
+    seed_default_schedule(db, admin_id)
     today = logical_today(now)
     dow = today.weekday()  # 0=Mon, 6=Sun
 
     # ── Holiday check ──────────────────────────────────────────────────────
-    holiday = db.query(Holiday).filter(Holiday.date == today).first()
+    holiday = db.query(Holiday).filter(Holiday.admin_id == admin_id, Holiday.date == today).first()
     if holiday:
-        nw_day, nw_start = get_next_window(db, today)
+        nw_day, nw_start = get_next_window(db, admin_id, today)
         return WorkWindowStatus(
             can_clock_in=False,
             is_holiday=True,
@@ -159,16 +179,19 @@ def get_work_window_status(db: Session, now: datetime) -> WorkWindowStatus:
         )
 
     # ── Day schedule ───────────────────────────────────────────────────────
-    sched = db.query(DaySchedule).filter(DaySchedule.day_of_week == dow).first()
+    sched = db.query(DaySchedule).filter(
+        DaySchedule.admin_id == admin_id, DaySchedule.day_of_week == dow
+    ).first()
     if not sched:
         sched = DaySchedule(
+            admin_id=admin_id,
             day_of_week=dow, is_working_day=False,
             work_start_hour=15, work_start_minute=0,
             work_end_hour=3,    work_end_minute=0,
         )
 
     if not sched.is_working_day:
-        nw_day, nw_start = get_next_window(db, today)
+        nw_day, nw_start = get_next_window(db, admin_id, today)
         return WorkWindowStatus(
             can_clock_in=False,
             is_holiday=False,

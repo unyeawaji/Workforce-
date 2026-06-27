@@ -54,6 +54,7 @@ def list_users(
 
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    admin_name = None
     if current_user.role == UserRole.admin:
         # Admin can only look up their own team members
         user = db.query(User).filter(
@@ -63,7 +64,6 @@ def get_user(user_id: int, db: Session = Depends(get_db), current_user=Depends(g
         admin_name = current_user.name if user else None
     elif current_user.id == user_id:
         user = db.query(User).filter(User.id == user_id).first()
-        admin_name = None
         if user and user.admin_id:
             admin = db.query(User).filter(User.id == user.admin_id).first()
             admin_name = admin.name if admin else None

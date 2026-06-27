@@ -123,9 +123,9 @@ def export(
         raise HTTPException(status_code=401, detail="Export token already used")
     db.add(UsedExportToken(jti=jti))
     db.commit()
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-    db.query(UsedExportToken).filter(UsedExportToken.used_at < cutoff).delete(synchronize_session=False)
-    db.commit()
+    # Stale-row cleanup moved to the background scheduler (_cleanup_old_export_tokens)
+    # so a request that's only here to *read* analytics data doesn't also pay for
+    # a DELETE every single time.
 
     admin = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
     if not admin or admin.role != UserRole.admin:

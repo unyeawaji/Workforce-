@@ -65,6 +65,12 @@ def list_activities(
         q = q.filter(Activity.worker_id.in_(wids))
         if worker_id:
             q = q.filter(Activity.worker_id == worker_id)
+    else:
+        # Clients have their own dedicated views (clients.py: /clients/me/feed,
+        # /clients/me/history) scoped to their assigned workers. There's no
+        # client-safe filter for the general activity feed, so deny outright
+        # rather than leaving this case to fall through with no filter at all.
+        raise HTTPException(403, "Access denied")
     if date_from:
         q = q.filter(Activity.date >= date_from)
     if date_to:
@@ -82,6 +88,8 @@ def get_activity(activity_id: int, db=Depends(get_db), user=Depends(get_current_
     a = _get(activity_id, db)
     if user.role == UserRole.worker and a.worker_id != user.id:
         raise HTTPException(403, "Access denied")
+    if user.role == UserRole.client:
+        raise HTTPException(403, "Access denied")
     return a
 
 
@@ -91,6 +99,8 @@ def update(activity_id: int, payload: ActivityUpdate, db=Depends(get_db), user=D
     if not a:
         raise HTTPException(404, "Activity not found")
     if user.role == UserRole.worker and a.worker_id != user.id:
+        raise HTTPException(403, "Access denied")
+    if user.role == UserRole.client:
         raise HTTPException(403, "Access denied")
     _assert_editable(a)
     new_start = payload.start_time or a.start_time
@@ -110,6 +120,8 @@ def delete(activity_id: int, db=Depends(get_db), user=Depends(get_current_user))
     if not a:
         raise HTTPException(404, "Activity not found")
     if user.role == UserRole.worker and a.worker_id != user.id:
+        raise HTTPException(403, "Access denied")
+    if user.role == UserRole.client:
         raise HTTPException(403, "Access denied")
     _assert_editable(a)
     db.delete(a); db.commit()
