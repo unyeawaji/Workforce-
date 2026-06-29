@@ -1,6 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#1d4ed8"/>
-  <path d="M48 60h96M48 96h60M48 132h72" stroke="white" stroke-width="15" stroke-linecap="round"/>
-  <circle cx="144" cy="132" r="26" fill="#10b981"/>
-  <path d="M132 132l9 9L156 120" stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="192" y2="192" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1d4ed8"/>
+      <stop offset="55%" stop-color="#8b6ef0"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <radialGradient id="pulse" cx="35%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#7c5cf0"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="192" height="192" rx="40" fill="#0a0a0f"/>
+  <circle cx="96" cy="96" r="46" fill="url(#pulse)" opacity="0.18" filter="url(#glow)"/>
+  <g stroke="url(#g)" stroke-width="7" stroke-linecap="round" fill="none">
+    <path d="M30 56V30h26"/>
+    <path d="M162 56V30h-26"/>
+    <path d="M30 136v26h26"/>
+    <path d="M162 136v26h-26"/>
+  </g>
+  <circle cx="96" cy="96" r="32" fill="none" stroke="url(#g)" stroke-width="4.5"/>
+  <circle cx="96" cy="96" r="20" fill="url(#pulse)"/>
+  <circle cx="90" cy="90" r="5" fill="#ffffff" opacity="0.75"/>
 </svg>
